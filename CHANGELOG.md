@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3 - 2026-08-29
+
+- Rebuilt against OmniGUI (GuiAndDialogs) v0.14.
+
 ## 0.1 — 2026-08-12
 
 First release.
