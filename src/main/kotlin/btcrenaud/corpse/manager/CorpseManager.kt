@@ -16,11 +16,9 @@ import btcrenaud.corpse.persistence.CorpseRecord
 import btcrenaud.corpse.persistence.CorpseRepository
 import btcrenaud.corpse.utils.CorpseDiagnostics
 import btcrenaud.corpse.utils.CorpseScheduler
-import com.typewritermc.engine.paper.entry.entity.DisplayNameProperty
 import com.typewritermc.engine.paper.entry.entity.EntityCreator
 import com.typewritermc.engine.paper.entry.entity.SkinProperty
 import com.typewritermc.engine.paper.entry.entity.toProperty
-import com.typewritermc.engine.paper.entry.entries.ConstVar
 import com.typewritermc.engine.paper.entry.entries.EntityProperty
 import com.typewritermc.engine.paper.entry.entries.Var
 import com.typewritermc.engine.paper.entry.entries.get
@@ -31,6 +29,7 @@ import com.typewritermc.engine.paper.utils.playSound
 import com.typewritermc.engine.paper.utils.toPosition
 import com.github.retrooper.packetevents.protocol.entity.pose.EntityPose
 import com.typewritermc.entity.entries.data.minecraft.GlowingEffectProperty
+import com.typewritermc.entity.entries.data.minecraft.CustomNameProperty
 import com.typewritermc.entity.entries.data.minecraft.PoseProperty
 import com.typewritermc.entity.entries.data.minecraft.living.equipmentProperty
 import org.bukkit.Bukkit
@@ -283,7 +282,7 @@ object CorpseManager {
                 position = location.toProperty(),
                 initialProperties = buildList {
                     if (definition.showDisplayName.constOr(true)) {
-                        add(DisplayNameProperty(ConstVar(displayName)))
+                        add(CustomNameProperty(displayName))
                     }
                 },
             )
@@ -367,7 +366,7 @@ object CorpseManager {
         displayName: String,
     ): List<EntityProperty> = buildList {
         resolveSkin(player)?.let { add(it) }
-        if (definition.showDisplayName.get(player)) add(DisplayNameProperty(ConstVar(displayName)))
+        if (definition.showDisplayName.get(player)) add(CustomNameProperty(displayName))
         // The armour the victim died in, so the corpse is recognisably theirs.
         if (settings.renderArmor.get(player)) runCatching { add(player.equipmentProperty()) }
         // Client-rendered outline. This replaces the old per-second particle ring, which the
