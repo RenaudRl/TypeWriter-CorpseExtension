@@ -1,10 +1,12 @@
 plugins {
-    kotlin("jvm") version "2.3.20"
-    id("com.typewritermc.module-plugin") version "2.1.0"
+    kotlin("jvm") version "2.2.10"
+    id("com.typewritermc.module-plugin") version "2.2.0"
 }
 
+val omniGuiVersion = "0.15"
+
 group = "btcrenaud"
-version = "0.3"
+version = "0.4"
 
 repositories {
     mavenCentral()
@@ -13,6 +15,16 @@ repositories {
     maven("https://maven.typewritermc.com/beta/")
     maven("https://maven.typewritermc.com/external/")
     maven("https://jitpack.io")
+    ivy {
+        name = "omniGuiGitHubReleases"
+        url = uri("https://github.com/RenaudRl/Typewriter-OmniGUIExtension/releases/download")
+        patternLayout {
+            artifact("[revision]/Typewriter-OmniGUIExtension-$omniGuiVersion.[ext]")
+        }
+        metadataSources {
+            artifact()
+        }
+    }
 }
 
 dependencies {
@@ -27,7 +39,7 @@ dependencies {
 
     // The loot menu is an OmniGUI menu like every other BTC menu, so it inherits shared chassis,
     // views, extended inventory and the engine's click handling instead of re-implementing them.
-    compileOnly(project(":Typewriter-OmniGUIExtension"))
+    compileOnly("btcrenaud:Typewriter-OmniGUIExtension:v$omniGuiVersion@jar")
 
     compileOnly("com.github.retrooper:packetevents-spigot:2.13.0")
     compileOnly("com.github.Tofaa2.EntityLib:api:2.4.11")
@@ -49,7 +61,7 @@ typewriter {
             "Spawns a corpse at the death location holding the player's inventory and experience. " +
             "Renders through EntityExtension, ModelEngine, BetterModel, BTC Mob NPC or MythicMobs NPC, " +
             "is rendered per viewer, survives restarts, and exposes events, facts and audiences."
-        engineVersion = "0.9.0-beta-175"
+        engineVersion = "0.9.0-beta-176"
         channel = com.typewritermc.moduleplugin.ReleaseChannel.BETA
         paper()
 
