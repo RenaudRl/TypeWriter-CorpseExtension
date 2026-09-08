@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "btcrenaud"
-version = "0.4"
+version = "0.5"
 
 base {
     archivesName.set("CorpseExtension")
@@ -39,7 +39,7 @@ typewriter {
         name = "Corpse"
         shortDescription = "Corpse system for TypeWriter"
         description = "Corpse extension providing corpse management for TypeWriter, allowing NPC death handling and corpse interactions."
-        engineVersion = "0.9.0-beta-176"
+        engineVersion = "0.9.0-beta-177"
         channel = com.typewritermc.moduleplugin.ReleaseChannel.BETA
         paper()
 
