@@ -3,6 +3,8 @@ plugins {
     id("com.typewritermc.module-plugin") version "2.2.0"
 }
 
+val omniGuiVersion = "0.15"
+
 group = "btcrenaud"
 version = "0.5"
 
@@ -17,6 +19,16 @@ repositories {
     maven("https://maven.typewritermc.com/beta/")
     maven("https://maven.typewritermc.com/external/")
     maven("https://jitpack.io")
+    ivy {
+        name = "omniGuiGitHubReleases"
+        url = uri("https://github.com/RenaudRl/Typewriter-OmniGUIExtension/releases/download")
+        patternLayout {
+            artifact("[revision]/Typewriter-OmniGUIExtension-$omniGuiVersion.[ext]")
+        }
+        metadataSources {
+            artifact()
+        }
+    }
 }
 
 
