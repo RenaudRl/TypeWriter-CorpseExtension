@@ -1,8 +1,8 @@
 # Corpse Extension
 
 ![Java Version](https://img.shields.io/badge/Java-21-orange)
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Target](https://img.shields.io/badge/Target-Paper%20/%20Folia%20/%20BTC--CORE-blue)
+![Typewriter](https://img.shields.io/badge/Typewriter-0.9.0--beta--177-purple)
+![Target](https://img.shields.io/badge/Target-Paper-blue)
 
 **Corpse Extension** spawns a corpse where a player died, holding their inventory and experience
 until someone loots it or it expires. Built for **TypeWriter**, engineered for **BTC Studio**
@@ -36,9 +36,37 @@ infrastructure.
 - **Quests**: `corpse_recovery_objective`, active until the player recovers their corpse.
 - **Admin**: `corpse_admin_command` with `list` and `clear`.
 
-### Performance
-- **Folia-safe**: world changes run on the region that owns the corpse.
-- **Dynamic values**: most settings can be driven by placeholders and facts.
+### Dynamic values
+- Most settings can be driven by placeholders and facts.
+
+---
+
+## Entries
+
+| Entry | Kind | Purpose |
+| :--- | :--- | :--- |
+| `corpse_settings` | Manifest | Server-wide rules: duration, loot mode, protection, messages, menu labels |
+| `corpse_definition` | Manifest | Look of the corpse (model backend or player fallback), by world and priority |
+| `on_corpse_spawn` | Event | A corpse spawns |
+| `on_corpse_loot` | Event | A corpse is looted |
+| `on_corpse_expire` | Event | A corpse expires unlooted |
+| `has_corpse` | Fact | Whether the player has a corpse waiting |
+| `corpse_count` | Fact | How many corpses the player has |
+| `corpse_owner_audience` | Audience | Players who have a corpse waiting |
+| `corpse_waypoint` | Audience | Points players back to their corpse |
+| `corpse_recovery_objective` | Objective | Recover your corpse |
+| `corpse_admin_command` | Command | Staff command (default `/corpses`) |
+
+## Commands and permissions
+
+Created from a `corpse_admin_command` entry; the command name and permission are fields of the entry.
+
+| Command | Description |
+| :--- | :--- |
+| `/corpses list` | List the corpses in the world |
+| `/corpses clear` | Remove every corpse (does not fire `on_corpse_expire`) |
+
+Default permission: `typewriter.corpse.admin`.
 
 ---
 
@@ -46,11 +74,15 @@ infrastructure.
 
 | Requirement | Needed for |
 | :--- | :--- |
+| Typewriter `0.9.0-beta-177` on Paper | Engine |
 | Basic Extension | Base entries |
 | Entity Extension | Model rendering and the player fallback |
 | Quest Extension | The recovery objective |
 | GUI Extension | The loot menu |
 | MySQL Extension | Cross-restart storage (optional — falls back to a local file) |
+
+Corpse takes the inventory when the death event runs and ignores the `keepInventory` game rule:
+keep that rule off in worlds where corpses are enabled.
 
 ---
 
