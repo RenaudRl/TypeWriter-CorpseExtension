@@ -41,6 +41,10 @@ infrastructure.
   unreadable storage file is kept aside (`.unreadable-<time>`) instead of being overwritten.
 - **Access control**: owner-only looting, or a timed protection window after which the corpse opens
   to everyone.
+- **Reach and click guard**: `interactionReach` (default 6 blocks, `0` = no limit) is the longest
+  distance for a click on a corpse to count, and `outOfReachMessage` is what a player farther away is
+  told (empty by default: no message). `interactionCooldownMillis` (default 250) ignores the repeated
+  packets of one click, so the menu does not open, or the loot get taken, several times over.
 - **Loot menu on the GUI engine**: take items one at a time instead of dropping everything at once.
   The menu is a GUI Extension menu, so it inherits the engine's click routing, menu history and
   extended-inventory projection rather than running its own inventory listener.
