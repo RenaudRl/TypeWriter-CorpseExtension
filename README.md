@@ -20,9 +20,19 @@ infrastructure.
   pose, wearing the victim's skin and armour.
 - **Client-side glow**: a configurable outline drawn by the client, not server-sent particles.
 
+### Where corpses appear
+- **World filter**: `allowedWorlds` and `excludedWorlds` on `corpse_settings` choose the worlds
+  where a death leaves a corpse. Empty allow list = every world (the default). Outside the allowed
+  worlds the death is vanilla: normal drops, normal experience.
+- Entries are compared, ignoring case, with the **world name** (its folder name) and the **dimension
+  key** (`minecraft:the_nether`). `*` matches any run of characters and `?` exactly one, so`n  `dungeon_*` covers every `dungeon_procedural_<uuid>` world, `dgbuild` is one named world.
+  An exclusion always wins over an allow entry.
+
 ### Loot
-- **Full inventory and experience**: captured on death, so the vanilla drops are taken over entirely.
-- **Survives restarts**: stored in MySQL when available, otherwise in the plugin folder.
+- **Full inventory and experience**: taken from the death event's own drop list, so what other
+  plugins decided (Curse of Vanishing, soulbound items, `keepInventory`) is respected.
+- **Survives restarts**: stored in MySQL when available, otherwise in the plugin folder. An
+  unreadable storage file is kept aside (`.unreadable-<time>`) instead of being overwritten.
 - **Access control**: owner-only looting, or a timed protection window after which the corpse opens
   to everyone.
 - **Loot menu on the GUI engine**: take items one at a time instead of dropping everything at once.
@@ -35,6 +45,8 @@ infrastructure.
 - **Facts and audiences**: `has_corpse`, `corpse_count`, `corpse_owner_audience`, `corpse_waypoint`.
 - **Quests**: `corpse_recovery_objective`, active until the player recovers their corpse.
 - **Admin**: `corpse_admin_command` with `list` and `clear`.
+- **Every text is yours**: messages, menu labels, the waypoint format and its eight arrows, the
+  admin command replies and the menu items are all fields, with MiniMessage and PlaceholderAPI.
 
 ### Dynamic values
 - Most settings can be driven by placeholders and facts.
@@ -63,7 +75,7 @@ Created from a `corpse_admin_command` entry; the command name and permission are
 
 | Command | Description |
 | :--- | :--- |
-| `/corpses list` | List the corpses in the world |
+| `/corpses list` | List every corpse on the server, with its owner, position and world |
 | `/corpses clear` | Remove every corpse (does not fire `on_corpse_expire`) |
 
 Default permission: `typewriter.corpse.admin`.
@@ -81,8 +93,8 @@ Default permission: `typewriter.corpse.admin`.
 | GUI Extension | The loot menu |
 | MySQL Extension | Cross-restart storage (optional — falls back to a local file) |
 
-Corpse takes the inventory when the death event runs and ignores the `keepInventory` game rule:
-keep that rule off in worlds where corpses are enabled.
+A death with `keepInventory` on (or cancelled by another plugin) leaves no corpse: the player keeps
+their items. Corpses only take what the death would have dropped.
 
 ---
 

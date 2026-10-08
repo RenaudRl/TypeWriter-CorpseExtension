@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.6 - 2026-10-08
+
+(0.4 and 0.5 were not announced here.)
+
+- **World filter**: `allowedWorlds` and `excludedWorlds` on `corpse_settings`. Empty allow list =
+  every world, as before. `*` and `?` wildcards (`dungeon_*`), exact names (`dgbuild`) and dimension
+  keys (`minecraft:the_nether`) are understood; an exclusion wins. Outside the allowed worlds the
+  death is vanilla.
+- **Every text is configurable**: all messages, GUI labels and materials, the waypoint format and
+  its eight direction arrows, the admin command replies, the default corpse name, and the recovery
+  objective text. Placeholders (`<player>`, `<x>`, ...) are filled before MiniMessage, and what a
+  player controls (a name) is escaped so it can never become a clickable tag.
+- New settings: `interactionReach` (6 blocks, the server did not check the distance of a click on a
+  packet entity), `interactionCooldownMillis`, `unknownWorldLabel`.
+- **Fix**: a death cancelled by another plugin (totem, revive) no longer takes the player's gear.
+- **Fix**: `keepInventory` and `keepLevel` are respected, and items other plugins keep for the
+  player (Curse of Vanishing, soulbound) are no longer duplicated into the corpse.
+- **Fix**: if the corpse cannot be created, the items drop normally instead of being lost.
+- **Fix**: taking an item with a full inventory dropped the whole stack again, duplicating the part
+  that had fitted.
+- **Fix**: two clicks racing for the same corpse could hand its contents out twice.
+- **Fix**: a restart no longer brings back items already taken; the last writes are awaited on
+  reload, and they run in order on a single thread.
+- **Fix**: an unreadable or half-written storage file no longer wipes every stored corpse; the
+  file is written through a temporary file and an unreadable one is kept aside.
+- **Fix**: restored corpses keep their pose, glow, name and animation (the owner's skin and armour
+  are not stored and stay the plain model's).
+- **Fix**: the respawn message, waypoint and objective use the latest corpse; the loot menu warns
+  before opening instead of after the first click; the per-player menu state is released on quit.
+- A definition is now also chosen with the dimension key; the `/corpses list` header is configurable.
+
 ## 0.3 - 2026-08-29
 
 - Rebuilt against OmniGUI (GuiAndDialogs) v0.14.
