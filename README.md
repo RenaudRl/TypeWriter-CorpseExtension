@@ -25,8 +25,14 @@ infrastructure.
   where a death leaves a corpse. Empty allow list = every world (the default). Outside the allowed
   worlds the death is vanilla: normal drops, normal experience.
 - Entries are compared, ignoring case, with the **world name** (its folder name) and the **dimension
-  key** (`minecraft:the_nether`). `*` matches any run of characters and `?` exactly one, so`n  `dungeon_*` covers every `dungeon_procedural_<uuid>` world, `dgbuild` is one named world.
+  key** (`minecraft:the_nether`). `*` matches any run of characters and `?` exactly one, so
+  `dungeon_*` covers every `dungeon_procedural_<uuid>` world, `dgbuild` is one named world.
   An exclusion always wins over an allow entry.
+- **`filteredWorldDeath`** chooses what a death looks like in a world the lists turn down (no effect
+  when both lists are empty). `VANILLA_DEATH_SCREEN` (default) is the ordinary Minecraft death: the
+  body lying on the ground and the death screen are drawn by the Minecraft client, they are not a
+  Corpse entity and Corpse cannot remove them. `INSTANT_RESPAWN` respawns the player on the next
+  tick, without the death screen. Items and experience drop as in vanilla either way.
 
 ### Loot
 - **Full inventory and experience**: taken from the death event's own drop list, so what other

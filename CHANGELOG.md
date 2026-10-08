@@ -8,6 +8,10 @@
   every world, as before. `*` and `?` wildcards (`dungeon_*`), exact names (`dgbuild`) and dimension
   keys (`minecraft:the_nether`) are understood; an exclusion wins. Outside the allowed worlds the
   death is vanilla.
+- **`filteredWorldDeath`** (`VANILLA_DEATH_SCREEN` by default, or `INSTANT_RESPAWN`): in a world the
+  filter turns down, respawn the player on the next tick instead of showing the death screen. The
+  body seen with `VANILLA_DEATH_SCREEN` is the Minecraft client's own death pose, not a Corpse
+  entity. No effect when both lists are empty.
 - **Every text is configurable**: all messages, GUI labels and materials, the waypoint format and
   its eight direction arrows, the admin command replies, the default corpse name, and the recovery
   objective text. Placeholders (`<player>`, `<x>`, ...) are filled before MiniMessage, and what a
@@ -29,7 +33,12 @@
   are not stored and stay the plain model's).
 - **Fix**: the respawn message, waypoint and objective use the latest corpse; the loot menu warns
   before opening instead of after the first click; the per-player menu state is released on quit.
-- A definition is now also chosen with the dimension key; the `/corpses list` header is configurable.
+- **Fix**: loot clicks read their settings and the player's state on the region thread, not in the
+  async packet event; the items leave the death drops the moment the corpse exists, so a late
+  failure can no longer leave them both in the corpse and on the ground; one bad stored corpse no
+  longer stops the others from being restored.
+- A definition is now also chosen with the dimension key; the `/corpses list` header and lines are
+  configurable. New optional `outOfReachMessage` (empty by default: no message).
 
 ## 0.3 - 2026-08-29
 

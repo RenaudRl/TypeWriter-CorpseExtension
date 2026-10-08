@@ -3,6 +3,7 @@ package btcrenaud.corpse.utils
 import com.typewritermc.engine.paper.plugin
 import org.bukkit.Bukkit
 import org.bukkit.Location
+import org.bukkit.entity.Entity
 import java.util.logging.Level
 
 /**
@@ -89,6 +90,19 @@ object CorpseScheduler {
         } else {
             Bukkit.getScheduler()
                 .runTaskLater(plugin, Runnable { guarded("delayed region task", task) }, delayTicks)
+        }
+    }
+
+    /**
+     * Run on the thread that owns [entity] after [delayTicks]. Required to act on a player (respawn,
+     * teleport, inventory) on Folia; on Paper it is the main thread. Skipped if the entity is gone.
+     */
+    fun runForEntityLater(entity: Entity, delayTicks: Long, task: () -> Unit) {
+        if (!plugin.isEnabled) return
+        if (folia) {
+            entity.scheduler.runDelayed(plugin, { _ -> guarded("entity task", task) }, null, delayTicks)
+        } else {
+            Bukkit.getScheduler().runTaskLater(plugin, Runnable { guarded("entity task", task) }, delayTicks)
         }
     }
 

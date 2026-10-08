@@ -13,6 +13,7 @@ import com.typewritermc.engine.paper.entry.entries.ConstVar
 import com.typewritermc.engine.paper.entry.entries.Var
 import com.typewritermc.engine.paper.utils.Color
 import com.typewritermc.engine.paper.utils.Sound
+import btcrenaud.corpse.death.FilteredWorldDeath
 import org.bukkit.Material
 import org.bukkit.Particle
 
@@ -55,6 +56,15 @@ class CorpseSettingsEntry(
             "Same syntax: 'dungeon_*', 'dgbuild', 'minecraft:the_end'. Empty = no exclusion."
     )
     val excludedWorlds: List<String> = emptyList(),
+    @Help(
+        "What a death looks like in a world the two lists above turn down (no effect when both lists " +
+            "are empty). VANILLA_DEATH_SCREEN: the ordinary Minecraft death, the player lies on the ground " +
+            "and sees the death screen. That body is drawn by the Minecraft client, it is not a Corpse " +
+            "entity and Corpse cannot remove it. INSTANT_RESPAWN: the player is respawned on the next " +
+            "tick, without the death screen. Items and experience drop as in vanilla in both cases."
+    )
+    @Default("VANILLA_DEATH_SCREEN")
+    val filteredWorldDeath: FilteredWorldDeath = FilteredWorldDeath.VANILLA_DEATH_SCREEN,
 
     // ─── Lifetime and access ───────────────────────────────────
     @Help("Seconds before the corpse disappears. 0 = never expire.")

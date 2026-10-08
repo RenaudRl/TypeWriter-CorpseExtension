@@ -70,7 +70,9 @@ object CorpseDeathListener : Listener {
 
         // Outside the allowed worlds the death stays vanilla: items drop, orbs spawn, nothing else.
         val world = player.world
-        if (!cfg.worldFilter().allows(world.name, world.key().asString())) return
+        val worldAllowed = cfg.worldFilter().allows(world.name, world.key().asString())
+        if (cfg.filteredWorldDeath.respawnsInstantly(worldAllowed)) respawnNextTick(player)
+        if (!worldAllowed) return
 
         // The event's own drop list rather than the live inventory: it already reflects
         // keepInventory, Curse of Vanishing and items other plugins chose to keep for the player.
@@ -99,6 +101,17 @@ object CorpseDeathListener : Listener {
             // Not registered, so the drops are untouched: the death falls back to vanilla instead of
             // losing the player's items.
             logger.warning("[Corpse] Could not create the corpse of ${player.name}; the items drop normally: ${failure.stackTraceToString()}")
+        }
+    }
+
+    /**
+     * Skips the death screen. Not done inside the death event, where the player is still being
+     * killed, but on the next tick and on the thread owning the player. A player who left in the
+     * meantime, or who is no longer dead, is left alone.
+     */
+    private fun respawnNextTick(player: Player) {
+        CorpseScheduler.runForEntityLater(player, 1L) {
+            if (player.isOnline && player.isDead) player.spigot().respawn()
         }
     }
 
