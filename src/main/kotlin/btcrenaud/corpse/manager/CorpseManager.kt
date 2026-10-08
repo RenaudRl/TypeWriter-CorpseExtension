@@ -19,6 +19,7 @@ import btcrenaud.corpse.text.CorpseText
 import btcrenaud.corpse.text.sendCorpseText
 import btcrenaud.corpse.utils.CorpseDiagnostics
 import btcrenaud.corpse.utils.CorpseScheduler
+import btcrenaud.corpse.utils.Failures
 import com.typewritermc.engine.paper.entry.entity.EntityCreator
 import com.typewritermc.engine.paper.entry.entity.SkinProperty
 import com.typewritermc.engine.paper.entry.entity.toProperty
@@ -127,8 +128,9 @@ object CorpseManager {
      * Create the corpse of [player].
      *
      * Throws, with nothing registered, if the corpse cannot be built; the caller still owns the
-     * items then. Once the corpse is registered nothing below can throw, so a failure can never
-     * leave the items both in a corpse and back with the caller.
+     * items then. [onRegistered] runs the moment the corpse exists and before anything else can
+     * fail, so the caller can give up its own copy of the items at exactly that point; every later
+     * step is isolated, so a failure can never leave the items both in a corpse and with the caller.
      */
     fun spawnCorpse(
         player: Player,
@@ -137,6 +139,7 @@ object CorpseManager {
         exp: Int,
         settings: CorpseSettingsEntry,
         definition: CorpseDefinitionEntry,
+        onRegistered: () -> Unit = {},
     ) {
         // Refreshed here rather than at startup: the settings entry only exists once pages are loaded.
         CorpseDiagnostics.enabled = settings.debugInteractions
@@ -165,8 +168,9 @@ object CorpseManager {
 
         activeCorpses[corpseId] = corpse
 
-        // From here the corpse exists. Each step is isolated so that one failing cannot unwind the
-        // spawn and make the caller give the items back a second time.
+        // From here the corpse owns the items. Each step is isolated so that one failing cannot
+        // unwind the spawn and make the caller give the items back a second time.
+        guarded("hand-over") { onRegistered() }
         guarded("persist") { persist(corpse) }
         guarded("audience refresh") { player.refreshCorpseAudience() }
         guarded("death effects") { spawnDeathEffects(corpseLoc, settings, player) }
@@ -176,7 +180,9 @@ object CorpseManager {
     private inline fun guarded(step: String, action: () -> Unit) {
         try {
             action()
-        } catch (failure: Exception) {
+        } catch (failure: Throwable) {
+            // An Error counts too: a backend class missing at runtime must not unwind the spawn.
+            if (Failures.isFatal(failure)) throw failure
             logger.warning("[Corpse] $step failed after the corpse was created: ${failure.stackTraceToString()}")
         }
     }
@@ -310,35 +316,47 @@ object CorpseManager {
         var restored = 0
 
         records.forEach { record ->
-            if (record.expiresAt in 1..now) {
-                repository?.delete(record.corpseId)
-                return@forEach
+            // One bad record (a missing model backend, a corrupt item) must not stop the others from
+            // coming back. It stays in storage untouched, so it can be recovered once fixed.
+            try {
+                if (restore(record, now, settings)) restored++
+            } catch (failure: Throwable) {
+                if (Failures.isFatal(failure)) throw failure
+                logger.warning("[Corpse] Could not restore corpse ${record.corpseId} of ${record.ownerName}: ${failure.stackTraceToString()}")
             }
-            val location = record.toLocation() ?: return@forEach
-            val world = location.world
-            val definition = Query.find<CorpseDefinitionEntry>()
-                .firstOrNull { it.id == record.definitionId }
-                ?: definitionFor(world?.name.orEmpty(), world?.key()?.asString())
-
-            activeCorpses[record.corpseId] = SimpleCorpseEntity(
-                corpseId = record.corpseId,
-                playerUUID = record.ownerUuid,
-                playerName = record.ownerName,
-                inventory = record.inventory,
-                experience = record.experience,
-                location = location,
-                access = record.access,
-                definitionId = record.definitionId,
-                createdAt = record.createdAt,
-                expiresAt = record.expiresAt,
-                // No player to resolve against after a restart: only constant values can be read,
-                // and the skin and armour, which were never stored, are the plain model's.
-                display = createDisplay(null, location, record.ownerName, settings, definition),
-            )
-            restored++
         }
 
         if (restored > 0) logger.info("[Corpse] Restored $restored corpse(s) from storage")
+    }
+
+    /** Brings one stored corpse back. Returns false when it was expired or its world is gone. */
+    private fun restore(record: CorpseRecord, now: Long, settings: CorpseSettingsEntry): Boolean {
+        if (record.expiresAt in 1..now) {
+            repository?.delete(record.corpseId)
+            return false
+        }
+        val location = record.toLocation() ?: return false
+        val world = location.world
+        val definition = Query.find<CorpseDefinitionEntry>()
+            .firstOrNull { it.id == record.definitionId }
+            ?: definitionFor(world?.name.orEmpty(), world?.key()?.asString())
+
+        activeCorpses[record.corpseId] = SimpleCorpseEntity(
+            corpseId = record.corpseId,
+            playerUUID = record.ownerUuid,
+            playerName = record.ownerName,
+            inventory = record.inventory,
+            experience = record.experience,
+            location = location,
+            access = record.access,
+            definitionId = record.definitionId,
+            createdAt = record.createdAt,
+            expiresAt = record.expiresAt,
+            // No player to resolve against after a restart: only constant values can be read,
+            // and the skin and armour, which were never stored, are the plain model's.
+            display = createDisplay(null, location, record.ownerName, settings, definition),
+        )
+        return true
     }
 
     /**

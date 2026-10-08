@@ -9,6 +9,7 @@ import btcrenaud.corpse.manager.CorpseManager
 import btcrenaud.corpse.text.sendCorpseText
 import btcrenaud.corpse.utils.CorpseDiagnostics
 import btcrenaud.corpse.utils.CorpseScheduler
+import btcrenaud.corpse.utils.Failures
 import com.typewritermc.engine.paper.entry.entries.get
 import com.typewritermc.engine.paper.events.AsyncFakeEntityInteract
 import com.typewritermc.engine.paper.logger
@@ -87,17 +88,18 @@ object CorpseDeathListener : Listener {
         val definition = CorpseManager.definitionFor(world.name, world.key().asString())
 
         try {
-            CorpseManager.spawnCorpse(player, player.location, loot.items, loot.experience, cfg, definition)
-        } catch (failure: Exception) {
-            // Nothing was registered, and the drops are untouched: the death falls back to vanilla
-            // instead of losing the player's items.
+            CorpseManager.spawnCorpse(player, player.location, loot.items, loot.experience, cfg, definition) {
+                // The corpse owns the loot from the moment it is registered: cleared there, not after
+                // the whole spawn, so nothing later (even an Error) can leave the items in both places.
+                event.drops.clear()
+                if (!event.keepLevel) event.droppedExp = 0
+            }
+        } catch (failure: Throwable) {
+            if (Failures.isFatal(failure)) throw failure
+            // Not registered, so the drops are untouched: the death falls back to vanilla instead of
+            // losing the player's items.
             logger.warning("[Corpse] Could not create the corpse of ${player.name}; the items drop normally: ${failure.stackTraceToString()}")
-            return
         }
-
-        // The corpse owns the loot now. Cleared only after it exists, never before.
-        event.drops.clear()
-        if (!event.keepLevel) event.droppedExp = 0
     }
 
     /**
@@ -126,25 +128,30 @@ object CorpseDeathListener : Listener {
         if (event.action != InteractAction.INTERACT && event.action != InteractAction.INTERACT_AT) return
         if (corpse == null) return
 
-        val settings = settings()
-
-        // The client repeats the packet while the button is held, and a right-click can also yield
-        // both actions at once. Without this, one gesture opened the menu several times over — or,
-        // in direct mode, looted twice.
-        if (!claimInteraction(player.uniqueId, settings.interactionCooldownMillis.get(player).toLong())) return
-
-        // Sneaking reaches the other mode, so a player can always get at both without a command.
-        val swap = player.isSneaking && settings.sneakSwapsLootMode.get(player)
-        val mode = when (settings.lootMode) {
-            CorpseLootMode.GUI -> if (swap) CorpseLootMode.DIRECT else CorpseLootMode.GUI
-            CorpseLootMode.DIRECT -> if (swap) CorpseLootMode.GUI else CorpseLootMode.DIRECT
-            CorpseLootMode.DROP -> if (swap) CorpseLootMode.GUI else CorpseLootMode.DROP
-        }
-        val reach = settings.interactionReach.get(player)
-
-        // The event is async and looting mutates the world, so hop onto the corpse's region.
+        // The event is async: the player's state and every `Var` (placeholders may touch the world)
+        // are read after the hop onto the corpse's region, never here. Looting mutates the world too.
         CorpseScheduler.runAt(corpse.location) {
-            if (!isInReach(player, corpse.location, reach)) return@runAt
+            val settings = settings()
+
+            // The client repeats the packet while the button is held, and a right-click can also yield
+            // both actions at once. Without this, one gesture opened the menu several times over — or,
+            // in direct mode, looted twice.
+            if (!claimInteraction(player.uniqueId, settings.interactionCooldownMillis.get(player).toLong())) {
+                return@runAt
+            }
+
+            if (!isInReach(player, corpse.location, settings.interactionReach.get(player))) {
+                player.sendCorpseText(settings.outOfReachMessage.get(player))
+                return@runAt
+            }
+
+            // Sneaking reaches the other mode, so a player can always get at both without a command.
+            val swap = player.isSneaking && settings.sneakSwapsLootMode.get(player)
+            val mode = when (settings.lootMode) {
+                CorpseLootMode.GUI -> if (swap) CorpseLootMode.DIRECT else CorpseLootMode.GUI
+                CorpseLootMode.DIRECT -> if (swap) CorpseLootMode.GUI else CorpseLootMode.DIRECT
+                CorpseLootMode.DROP -> if (swap) CorpseLootMode.GUI else CorpseLootMode.DROP
+            }
             when (mode) {
                 CorpseLootMode.GUI -> openGui(player, corpse, settings)
                 CorpseLootMode.DIRECT -> CorpseManager.lootCorpse(corpse, player, handToLooter = true)

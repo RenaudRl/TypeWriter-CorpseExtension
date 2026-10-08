@@ -150,6 +150,11 @@ class CorpseSettingsEntry(
     @Placeholder
     @Default("\"<red>You cannot loot this corpse.\"")
     val cannotLootMessage: Var<String> = ConstVar("<red>You cannot loot this corpse."),
+    @Help("Shown when a player clicks a corpse from farther than the interaction reach. Empty by default: no message.")
+    @Colored
+    @Placeholder
+    @Default("\"\"")
+    val outOfReachMessage: Var<String> = ConstVar(""),
     @Help("Shown when the looter's inventory is full and items had to be dropped. Leave empty for no message.")
     @Colored
     @Placeholder

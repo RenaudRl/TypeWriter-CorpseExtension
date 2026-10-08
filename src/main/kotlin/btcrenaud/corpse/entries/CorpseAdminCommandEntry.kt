@@ -49,11 +49,11 @@ class CorpseAdminCommandEntry(
     @Colored
     @Placeholder
     @Default(
-        "\"<gray>- <white><player></white> at <white><x>, <y>, <z></white> in <white><world></white> " +
+        "\"" + DEFAULT_HEADER + "<gray>- <white><player></white> at <white><x>, <y>, <z></white> in <white><world></white> " +
             "(<yellow><items></yellow> items, <yellow><xp></yellow> xp)\""
     )
     val listEntryMessage: String =
-        "<gray>- <white><player></white> at <white><x>, <y>, <z></white> in <white><world></white> " +
+        DEFAULT_HEADER + "<gray>- <white><player></white> at <white><x>, <y>, <z></white> in <white><world></white> " +
             "(<yellow><items></yellow> items, <yellow><xp></yellow> xp)",
     @Help("Shown in place of <world> when a corpse's world is no longer loaded.")
     @Colored
