@@ -5,6 +5,7 @@ import com.typewritermc.core.entries.Ref
 import com.typewritermc.core.entries.emptyRef
 import com.typewritermc.core.entries.ref
 import com.typewritermc.core.extension.annotations.Colored
+import com.typewritermc.core.extension.annotations.Default
 import com.typewritermc.core.extension.annotations.Entry
 import com.typewritermc.core.extension.annotations.Help
 import com.typewritermc.core.extension.annotations.Placeholder
@@ -35,6 +36,7 @@ class CorpseRecoveryObjectiveEntry(
     @Help("The text shown to the player.")
     @Colored
     @Placeholder
+    @Default("\"<red>Recover your belongings\"")
     override val display: Var<String> = ConstVar("<red>Recover your belongings"),
     override val children: List<Ref<AudienceEntry>> = emptyList(),
     override val priorityOverride: Optional<Int> = Optional.empty(),

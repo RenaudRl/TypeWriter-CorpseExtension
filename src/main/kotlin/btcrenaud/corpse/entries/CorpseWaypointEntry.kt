@@ -3,14 +3,16 @@ package btcrenaud.corpse.entries
 import com.typewritermc.core.books.pages.Colors
 import com.typewritermc.core.entries.Ref
 import com.typewritermc.core.entries.ref
+import com.typewritermc.core.extension.annotations.Colored
 import com.typewritermc.core.extension.annotations.Default
 import com.typewritermc.core.extension.annotations.Entry
 import com.typewritermc.core.extension.annotations.Help
+import com.typewritermc.core.extension.annotations.Placeholder
 import btcrenaud.corpse.manager.CorpseManager
+import btcrenaud.corpse.text.DirectionArrows
+import btcrenaud.corpse.text.corpseComponent
 import com.typewritermc.engine.paper.entry.entries.*
-import com.typewritermc.engine.paper.utils.asMini
 import org.bukkit.entity.Player
-import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -31,17 +33,29 @@ class CorpseWaypointEntry(
     @Help("Show the distance and direction on the action bar.")
     @Default("true")
     val showActionBar: Var<Boolean> = ConstVar(true),
-    @Help("Action bar text. <distance> is the distance in blocks, <direction> an arrow toward the corpse.")
+    @Help("Action bar text. <distance> is the distance in blocks, <direction> a symbol pointing toward the corpse.")
+    @Colored
+    @Placeholder
+    @Default("\"<red>☠ <white><distance>m <gray><direction>\"")
     val format: Var<String> = ConstVar("<red>☠ <white><distance>m <gray><direction>"),
+    @Help(
+        "The eight symbols standing for <direction>, clockwise from straight ahead: " +
+            "ahead, ahead-right, right, behind-right, behind, behind-left, left, ahead-left. " +
+            "Anything but exactly eight entries is ignored and the default arrows are used."
+    )
+    @Default("[\"↑\",\"↗\",\"→\",\"↘\",\"↓\",\"↙\",\"←\",\"↖\"]")
+    val directionArrows: List<String> = DirectionArrows.DEFAULT,
     override val inverted: Boolean = false,
 ) : AudienceFilterEntry, Invertible {
-    override suspend fun display(): AudienceFilter = CorpseWaypointFilter(ref(), showActionBar, format)
+    override suspend fun display(): AudienceFilter =
+        CorpseWaypointFilter(ref(), showActionBar, format, DirectionArrows.usable(directionArrows))
 }
 
 class CorpseWaypointFilter(
     ref: Ref<out AudienceFilterEntry>,
     private val showActionBar: Var<Boolean>,
     private val format: Var<String>,
+    private val arrows: List<String>,
 ) : AudienceFilter(ref), TickableDisplay {
 
     override fun filter(player: Player): Boolean {
@@ -63,24 +77,16 @@ class CorpseWaypointFilter(
             val dx = target.x - player.location.x
             val dz = target.z - player.location.z
             val distance = sqrt(dx * dx + dz * dz).roundToInt()
+            val angle = DirectionArrows.relativeAngle(dx, dz, player.location.yaw)
 
-            val text = format.get(player)
-                .replace("<distance>", distance.toString())
-                .replace("<direction>", arrowTowards(player, dx, dz))
-
-            player.sendActionBar(text.asMini())
+            player.sendActionBar(
+                player.corpseComponent(
+                    format.get(player),
+                    values = mapOf("distance" to distance.toString()),
+                    // The symbols are the admin's own text, so they may carry colours.
+                    trusted = mapOf("direction" to arrows[DirectionArrows.indexFor(angle)]),
+                )
+            )
         }
-    }
-
-    /** An arrow in the player's own frame of reference, so it points where they are looking. */
-    private fun arrowTowards(player: Player, dx: Double, dz: Double): String {
-        val bearing = Math.toDegrees(atan2(-dx, dz))
-        val relative = ((bearing - player.location.yaw) % 360 + 360) % 360
-        return ARROWS[((relative + 22.5) / 45).toInt() % ARROWS.size]
-    }
-
-    companion object {
-        /** Clockwise from straight ahead, in 45° steps. */
-        private val ARROWS = listOf("↑", "↗", "→", "↘", "↓", "↙", "←", "↖")
     }
 }

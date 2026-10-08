@@ -4,10 +4,13 @@ import com.github.retrooper.packetevents.protocol.entity.pose.EntityPose
 import com.typewritermc.core.books.pages.Colors
 import com.typewritermc.core.entries.Ref
 import com.typewritermc.core.entries.emptyRef
+import btcrenaud.corpse.world.WorldFilter
+import com.typewritermc.core.extension.annotations.Colored
 import com.typewritermc.core.extension.annotations.Default
 import com.typewritermc.core.extension.annotations.Entry
 import com.typewritermc.core.extension.annotations.Help
 import com.typewritermc.core.extension.annotations.OnlyTags
+import com.typewritermc.core.extension.annotations.Placeholder
 import com.typewritermc.engine.paper.entry.ManifestEntry
 import com.typewritermc.engine.paper.entry.entries.ConstVar
 import com.typewritermc.engine.paper.entry.entries.EntityDefinitionEntry
@@ -64,7 +67,10 @@ class CorpseDefinitionEntry(
     )
     val definitionRef: Ref<out EntityDefinitionEntry> = emptyRef(),
     @Help("Name shown above the corpse. Use {player} for the dead player's name.")
-    val displayName: Var<String> = ConstVar("<red>☠ {player}'s corpse"),
+    @Colored
+    @Placeholder
+    @Default("\"" + DEFAULT_DISPLAY_NAME + "\"")
+    val displayName: Var<String> = ConstVar(DEFAULT_DISPLAY_NAME),
     @Help("Show the floating name above the corpse.")
     @Default("true")
     val showDisplayName: Var<Boolean> = ConstVar(true),
@@ -83,6 +89,7 @@ class CorpseDefinitionEntry(
     @Default("true")
     val playDeathAnimation: Var<Boolean> = ConstVar(true),
     @Help("Animation to play on spawn, by name, on BetterModel / BTC Mob NPC / MythicMobs NPC models.")
+    @Default("\"death\"")
     val deathAnimationName: Var<String> = ConstVar("death"),
     @Help("Loop the animation for as long as the corpse exists. Leave off for a one-shot death animation.")
     @Default("true")
@@ -106,13 +113,26 @@ class CorpseDefinitionEntry(
     @Help("Seconds before corpses of this type expire. Overrides the global setting when above 0.")
     @Default("0")
     val overrideDuration: Var<Int> = ConstVar(0),
-    @Help("Worlds this definition applies to. Empty = every world.")
+    @Help(
+        "Worlds this definition applies to. Empty = every world. " +
+            "Takes the same entries as the world lists of the global settings: a world name, a dimension key, " +
+            "or a pattern such as 'dungeon_*'. This picks the look of a corpse; whether a death leaves " +
+            "a corpse at all is decided by the global settings."
+    )
     val worlds: List<String> = emptyList(),
     @Help("Highest priority wins when several definitions match the death location.")
     @Default("0")
     val priority: Int = 0,
 ) : ManifestEntry {
-    /** Whether this definition may be used for a death in [worldName]. */
-    fun appliesTo(worldName: String): Boolean =
-        worlds.isEmpty() || worlds.any { it.equals(worldName, ignoreCase = true) }
+    /**
+     * Whether this definition may be used for a death in the world named [worldName], whose
+     * dimension key is [dimensionKey]. Matching is [WorldFilter]'s.
+     */
+    fun appliesTo(worldName: String, dimensionKey: String? = null): Boolean =
+        WorldFilter.selects(worlds, worldName, dimensionKey)
+
+    companion object {
+        /** The name above a corpse; also what a restored corpse shows when its name is placeholder-driven. */
+        const val DEFAULT_DISPLAY_NAME = "<red>☠ {player}'s corpse"
+    }
 }

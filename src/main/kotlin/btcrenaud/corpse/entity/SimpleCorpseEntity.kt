@@ -29,8 +29,9 @@ class SimpleCorpseEntity(
 
     private val mutableInventory = inventory.map { it.clone() }.toMutableList()
 
+    // Guarded by the list itself: clicks on a corpse can come from several regions at once.
     override val inventory: List<ItemStack>
-        get() = mutableInventory.map { it.clone() }
+        get() = synchronized(mutableInventory) { mutableInventory.map { it.clone() } }
 
     override fun tick() = display.tick()
 
@@ -48,15 +49,15 @@ class SimpleCorpseEntity(
         return elapsed >= access.ownerProtectionSeconds * 1000L
     }
 
-    override fun removeItem(slot: Int): ItemStack? {
-        if (slot !in mutableInventory.indices) return null
+    override fun removeItem(slot: Int): ItemStack? = synchronized(mutableInventory) {
+        if (slot !in mutableInventory.indices) return@synchronized null
         val item = mutableInventory[slot]
-        if (item.type.isAir) return null
+        if (item.type.isAir) return@synchronized null
         mutableInventory[slot] = ItemStack(Material.AIR)
-        return item
+        item
     }
 
-    override fun isEmpty(): Boolean = mutableInventory.all { it.type.isAir }
+    override fun isEmpty(): Boolean = synchronized(mutableInventory) { mutableInventory.all { it.type.isAir } }
 
     /** Push updated render state (glow, name, equipment) to every viewer. */
     fun updateProperties(properties: List<EntityProperty>) = display.updateProperties(properties)

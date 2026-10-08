@@ -1,7 +1,11 @@
 package btcrenaud.corpse.gui
 
 import btcrenaud.corpse.entity.CorpseEntity
+import btcrenaud.corpse.entries.CorpseSettingsEntry
 import btcrenaud.corpse.manager.CorpseManager
+import btcrenaud.corpse.text.CorpseText
+import btcrenaud.corpse.text.corpseComponent
+import btcrenaud.corpse.text.sendCorpseText
 import btcrenaud.gui.GuiType
 import btcrenaud.gui.InventorySize
 import btcrenaud.gui.api.GuiSlot
@@ -10,9 +14,7 @@ import btcrenaud.gui.api.MenuDefinition
 import btcrenaud.gui.api.SimpleLayout
 import btcrenaud.gui.services.MenuSessionService
 import com.typewritermc.engine.paper.entry.entries.get
-import com.typewritermc.engine.paper.utils.asMini
-import net.kyori.adventure.text.minimessage.MiniMessage
-import org.bukkit.Material
+import net.kyori.adventure.text.Component
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
@@ -54,6 +56,11 @@ object CorpseGUI {
         openPages.clear()
     }
 
+    /** Drops the page memory of a player who left, so the map does not grow with every visitor. */
+    fun forget(playerId: UUID) {
+        openPages.remove(playerId)
+    }
+
     fun openCorpseInventory(player: Player, corpse: CorpseEntity, page: Int = 0) {
         val settings = CorpseManager.settings()
         val items = corpse.inventory
@@ -61,12 +68,14 @@ object CorpseGUI {
         val current = page.coerceIn(0, pages - 1)
         openPages[player.uniqueId] = current
 
-        val rawTitle = settings.guiTitle.get(player).replace("<player>", corpse.playerName)
+        val titleValues = mapOf("player" to corpse.playerName)
+        val titleTemplate = settings.guiTitle.get(player)
+        val rawTitle = CorpseText.fill(titleTemplate, titleValues)
         val slots = mutableListOf<GuiSlot>()
 
-        val filler = ItemStack(Material.BLACK_STAINED_GLASS_PANE).apply {
+        val filler = ItemStack(settings.guiFillerMaterial).apply {
             val meta = itemMeta ?: return@apply
-            meta.displayName(" ".asMini())
+            meta.displayName(Component.space())
             itemMeta = meta
         }
 
@@ -101,21 +110,24 @@ object CorpseGUI {
         controls[LOOT_ALL_X] = GuiSlot(
             x = LOOT_ALL_X,
             y = CONTROL_ROW,
-            item = ItemStack(Material.CHEST).apply {
+            item = ItemStack(settings.guiLootAllMaterial).apply {
                 val meta = itemMeta ?: return@apply
-                meta.displayName(settings.guiLootAllLabel.get(player).asMini())
+                meta.displayName(player.corpseComponent(settings.guiLootAllLabel.get(player)))
                 val lore = buildList {
                     if (corpse.experience > 0) {
                         add(
-                            settings.guiExperienceLabel.get(player)
-                                .replace("<experience>", corpse.experience.toString()).asMini()
+                            player.corpseComponent(
+                                settings.guiExperienceLabel.get(player),
+                                mapOf("experience" to corpse.experience.toString()),
+                            )
                         )
                     }
                     if (pages > 1) {
                         add(
-                            settings.guiPageLabel.get(player)
-                                .replace("<page>", (current + 1).toString())
-                                .replace("<pages>", pages.toString()).asMini()
+                            player.corpseComponent(
+                                settings.guiPageLabel.get(player),
+                                mapOf("page" to (current + 1).toString(), "pages" to pages.toString()),
+                            )
                         )
                     }
                 }
@@ -126,10 +138,10 @@ object CorpseGUI {
             onClick = { clicker, _ ->
                 val live = CorpseManager.getCorpse(corpse.corpseId)
                 if (live == null) {
-                    clicker.sendMessage(settings.corpseGoneMessage.get(clicker).asMini())
+                    clicker.sendCorpseText(settings.corpseGoneMessage.get(clicker))
                     clicker.closeInventory()
                 } else if (!live.canLoot(clicker)) {
-                    clicker.sendMessage(settings.cannotLootMessage.get(clicker).asMini())
+                    clicker.sendCorpseText(settings.cannotLootMessage.get(clicker))
                 } else {
                     CorpseManager.lootCorpse(live, clicker, handToLooter = true)
                     clicker.closeInventory()
@@ -139,12 +151,12 @@ object CorpseGUI {
 
         // Paging arrows only exist when there is somewhere to go.
         if (current > 0) {
-            controls[PREV_X] = pageButton(settings.guiPreviousPageLabel.get(player)) { clicker ->
+            controls[PREV_X] = pageButton(settings, player, settings.guiPreviousPageLabel.get(player)) { clicker ->
                 reopen(clicker, corpse, current - 1)
             }.copy(x = PREV_X, y = CONTROL_ROW)
         }
         if (current < pages - 1) {
-            controls[NEXT_X] = pageButton(settings.guiNextPageLabel.get(player)) { clicker ->
+            controls[NEXT_X] = pageButton(settings, player, settings.guiNextPageLabel.get(player)) { clicker ->
                 reopen(clicker, corpse, current + 1)
             }.copy(x = NEXT_X, y = CONTROL_ROW)
         }
@@ -152,9 +164,9 @@ object CorpseGUI {
         controls[CLOSE_X] = GuiSlot(
             x = CLOSE_X,
             y = CONTROL_ROW,
-            item = ItemStack(Material.BARRIER).apply {
+            item = ItemStack(settings.guiCloseMaterial).apply {
                 val meta = itemMeta ?: return@apply
-                meta.displayName(settings.guiCloseLabel.get(player).asMini())
+                meta.displayName(player.corpseComponent(settings.guiCloseLabel.get(player)))
                 itemMeta = meta
             },
             allowPickup = false,
@@ -176,7 +188,7 @@ object CorpseGUI {
         val definition = MenuDefinition(
             id = "corpse:${corpse.corpseId}",
             type = GuiType.CUSTOM,
-            title = MiniMessage.miniMessage().deserialize(rawTitle),
+            title = player.corpseComponent(titleTemplate, titleValues),
             rawTitle = rawTitle,
             size = InventorySize.SIZE_54,
             layout = SimpleLayout(slots, id = "corpse_loot"),
@@ -187,12 +199,17 @@ object CorpseGUI {
         MenuSessionService.register(player, definition, pushHistory = current == 0)
     }
 
-    private fun pageButton(label: String, action: (Player) -> Unit): GuiSlot = GuiSlot(
+    private fun pageButton(
+        settings: CorpseSettingsEntry,
+        player: Player,
+        label: String,
+        action: (Player) -> Unit,
+    ): GuiSlot = GuiSlot(
         x = 0,
         y = CONTROL_ROW,
-        item = ItemStack(Material.ARROW).apply {
+        item = ItemStack(settings.guiPageMaterial).apply {
             val meta = itemMeta ?: return@apply
-            meta.displayName(label.asMini())
+            meta.displayName(player.corpseComponent(label))
             itemMeta = meta
         },
         allowPickup = false,
@@ -204,7 +221,7 @@ object CorpseGUI {
         val settings = CorpseManager.settings()
         val live = CorpseManager.getCorpse(corpse.corpseId)
         if (live == null) {
-            player.sendMessage(settings.corpseGoneMessage.get(player).asMini())
+            player.sendCorpseText(settings.corpseGoneMessage.get(player))
             player.closeInventory()
             return
         }
@@ -214,12 +231,12 @@ object CorpseGUI {
     private fun takeItem(player: Player, corpse: CorpseEntity, slot: Int) {
         val settings = CorpseManager.settings()
         val live = CorpseManager.getCorpse(corpse.corpseId) ?: run {
-            player.sendMessage(settings.corpseGoneMessage.get(player).asMini())
+            player.sendCorpseText(settings.corpseGoneMessage.get(player))
             player.closeInventory()
             return
         }
         if (!live.canLoot(player)) {
-            player.sendMessage(settings.cannotLootMessage.get(player).asMini())
+            player.sendCorpseText(settings.cannotLootMessage.get(player))
             return
         }
 
@@ -228,8 +245,10 @@ object CorpseGUI {
         val leftover = player.inventory.addItem(item.clone())
         if (leftover.isNotEmpty()) {
             // The item left the corpse either way, so it must land somewhere rather than vanish.
-            player.sendMessage(settings.inventoryFullMessage.get(player).asMini())
-            player.world.dropItemNaturally(player.location, item.clone())
+            // Only what did not fit is dropped: dropping the whole stack as well duplicated the
+            // part that had already gone into the inventory.
+            player.sendCorpseText(settings.inventoryFullMessage.get(player))
+            leftover.values.forEach { player.world.dropItemNaturally(player.location, it) }
         }
 
         // The slot is empty in memory now; storage has to agree or a restart would hand it back.

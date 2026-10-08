@@ -41,7 +41,12 @@ dependencies {
     compileOnly(project(":Typewriter-OmniGUIExtension"))
     compileOnly("com.github.retrooper:packetevents-spigot:2.13.0")
     compileOnly("com.github.Tofaa2.EntityLib:api:2.4.11")
+    // Pure-logic tests only: paper-api is here for MiniMessage, no server is started.
+    testImplementation("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
     testImplementation(kotlin("test"))
+    testImplementation(platform("org.junit:junit-bom:5.13.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 typewriter {
@@ -64,4 +69,8 @@ typewriter {
 
 kotlin {
     jvmToolchain(21)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
