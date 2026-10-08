@@ -6,7 +6,7 @@ plugins {
 val omniGuiVersion = "0.15"
 
 group = "btcrenaud"
-version = "0.5"
+version = "0.6"
 
 base {
     archivesName.set("CorpseExtension")
