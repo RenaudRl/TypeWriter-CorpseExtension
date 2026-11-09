@@ -151,6 +151,7 @@ class FileCorpseRepository(
     }
 
     /** True while the file does not match the cache because the last write failed. */
+    @Volatile
     private var dirty = false
 
     /**

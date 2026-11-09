@@ -28,6 +28,17 @@ class PurgeMarks(private val file: File) {
         }
     }
 
+    companion object {
+        /** The marks in [file], or null (after [onFailure]) when it cannot be read: the restore goes on without marks. */
+        fun openOrNull(file: File, onFailure: (Throwable) -> Unit): PurgeMarks? =
+            try {
+                PurgeMarks(file)
+            } catch (failure: Exception) {
+                onFailure(failure)
+                null
+            }
+    }
+
     fun all(): Set<UUID> = ids.toSet()
 
     fun contains(corpseId: UUID): Boolean = corpseId in ids

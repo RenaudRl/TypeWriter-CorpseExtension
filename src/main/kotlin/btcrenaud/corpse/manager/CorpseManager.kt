@@ -96,6 +96,11 @@ object CorpseManager {
 
     @Volatile
     private var closing = false
+
+    /** Bumped by every [shutdown], so a task queued before it can tell it now belongs to a past run. */
+    @Volatile
+    private var epoch = 0
+    private val purgeFileLock = Any()
     private var initialized = false
 
     fun initialize() {
@@ -112,7 +117,9 @@ object CorpseManager {
         storage = queue
         queue.submit {
             repository = CorpseRepository.create()
-            purgeMarks = PurgeMarks(plugin.dataFolder.resolve(PURGE_MARKS_FILE))
+            purgeMarks = PurgeMarks.openOrNull(plugin.dataFolder.resolve(PURGE_MARKS_FILE)) {
+                logger.severe("[Corpse] Could not read the purge marks, restoring without them: ${it.stackTraceToString()}")
+            }
             applyPurgeMarks()
             restoreAll()
         }
@@ -124,6 +131,7 @@ object CorpseManager {
         // Tells a restore still running on the storage thread to stop, so it cannot register a
         // corpse after the clear below.
         closing = true
+        epoch++
 
         // Wait for the writes already queued, and for a restore in progress, before touching the
         // corpses: a reload right after the last item was taken must not lose that write and hand
@@ -277,6 +285,12 @@ object CorpseManager {
             looter.sendCorpseText(settings.corpseGoneMessage.get(looter))
             return
         }
+        // The corpse may have been emptied and unregistered between the lookup and the claim.
+        if (activeCorpses[corpse.corpseId] !== claimed) {
+            claims.remove(corpse.corpseId)
+            looter.sendCorpseText(settings.corpseGoneMessage.get(looter))
+            return
+        }
 
         // Emptied in one step under the corpse's own lock, the lock a single-slot take also uses.
         val taken = claimed.takeAll()
@@ -284,6 +298,7 @@ object CorpseManager {
         val pending = LinkedHashMap(taken)
         val overflow = linkedMapOf<Int, ItemStack>()
         var orbExperience = 0
+        var experienceGiven = false
         try {
             if (handToLooter) {
                 taken.forEach { (slot, item) ->
@@ -293,6 +308,7 @@ object CorpseManager {
                 }
                 if (overflow.isNotEmpty()) looter.sendCorpseText(settings.inventoryFullMessage.get(looter))
                 if (experience > 0) looter.giveExp(experience)
+                experienceGiven = true
             } else {
                 pending.clear()
                 overflow.putAll(taken)
@@ -313,7 +329,7 @@ object CorpseManager {
             if (Failures.isFatal(failure)) throw failure
             logger.warning("[Corpse] Emptying corpse ${claimed.corpseId} for ${looter.name} failed, keeping what did not arrive: ${failure.stackTraceToString()}")
             pending.putAll(overflow)
-            putBack(claimed, pending, orbExperience)
+            putBack(claimed, pending, CorpseBookkeeping.experienceToPutBack(experience, experienceGiven))
         }
     }
 
@@ -343,6 +359,7 @@ object CorpseManager {
             return
         }
         val loc = corpse.location
+        val queuedInEpoch = epoch
         // The world is mutated on the region that owns the corpse, not on the thread that called us.
         val scheduled = CorpseScheduler.runAt(loc) {
             val failedItems = linkedMapOf<Int, ItemStack>()
@@ -372,11 +389,40 @@ object CorpseManager {
                     }
                 }
             }
-            if (failedItems.isEmpty() && !orbFailed) delivered()
+            val arrived = failedItems.isEmpty() && !orbFailed
+            // A shutdown happened while this task was queued: the registry, the claims and the
+            // storage it would update now belong to another run (or to none).
+            if (CorpseBookkeeping.isStale(queuedInEpoch, epoch, closing, plugin.isEnabled)) {
+                retireAfterShutdown(corpse, arrived)
+                return@runAt
+            }
+            if (arrived) delivered()
             else putBack(corpse, failedItems, if (orbFailed) orbExperience else 0)
         }
         // Not scheduled (the plugin is going down): nothing was dropped, so nothing is lost either.
         if (!scheduled) putBack(corpse, items, orbExperience)
+    }
+
+    /**
+     * The end of a hand-over that outlived a shutdown. The delete can no longer be queued, and the
+     * stored copy still holds everything, so once the contents have arrived the id goes straight to
+     * the purge marks, which the next startup applies before restoring: otherwise they come back.
+     */
+    private fun retireAfterShutdown(corpse: CorpseEntity, arrived: Boolean) {
+        val id = corpse.corpseId
+        if (!arrived) {
+            logger.severe("[Corpse] Corpse $id was only partly emptied when the plugin shut down; its stored copy will come back whole after the restart")
+            return
+        }
+        CorpseBookkeeping.unreadableReport(id, corpse.unreadableItems).forEach { logger.severe(it) }
+        synchronized(purgeFileLock) {
+            try {
+                PurgeMarks(plugin.dataFolder.resolve(PURGE_MARKS_FILE)).add(id)
+                logger.warning("[Corpse] Corpse $id was emptied during a shutdown; it is marked for purging at the next startup")
+            } catch (failure: Exception) {
+                logger.severe("[Corpse] Corpse $id was emptied during a shutdown but its purge mark could not be written, its contents will be duplicated after the restart: ${failure.stackTraceToString()}")
+            }
+        }
     }
 
     /** Give the corpse back what a failed hand-over did not deliver, and keep it. */
@@ -424,6 +470,10 @@ object CorpseManager {
         // A corpse whose world is not loaded waits for it: there is nowhere to drop the contents.
         if (corpse.location.world == null) return
         if (activeCorpses[corpse.corpseId] == null || !claims.add(corpse.corpseId)) return
+        if (activeCorpses[corpse.corpseId] !== corpse) {
+            claims.remove(corpse.corpseId)
+            return
+        }
 
         val taken = corpse.takeAll()
         val experience = corpse.takeExperience()
@@ -462,6 +512,8 @@ object CorpseManager {
             guarded("expire event") { fireCorpseEvent<CorpseExpireEventEntry>(null, corpse, itemCount, experience) }
         }
         guarded("dispose") { corpse.dispose() }
+        // Last chance to keep their text: once the stored copy is deleted nothing holds it.
+        CorpseBookkeeping.unreadableReport(corpse.corpseId, corpse.unreadableItems).forEach { logger.severe(it) }
         forget(corpse.corpseId)
         guarded("audience refresh") { refreshAudienceOf(corpse.playerUUID) }
     }
@@ -634,12 +686,13 @@ object CorpseManager {
         ) { store.delete(corpseId) }
         if (failure == null) return true
 
-        val marked = alreadyMarked || runCatching { purgeMarks?.add(corpseId) }
+        val marks = purgeMarks
+        val marked = alreadyMarked || (marks != null && runCatching { marks.add(corpseId) }
             .onFailure { logger.severe("[Corpse] Could not record the purge mark of corpse $corpseId: ${it.stackTraceToString()}") }
-            .isSuccess
+            .isSuccess)
         logger.severe(
             "[Corpse] Could not delete corpse $corpseId from storage after $STORAGE_ATTEMPTS attempts; " +
-                (if (marked) "it is marked for purging at the next startup" else "it WILL come back after a restart") +
+                CorpseBookkeeping.deleteFailureOutcome(marked, marksAvailable = marks != null) +
                 ". ${failure.stackTraceToString()}"
         )
         return false
