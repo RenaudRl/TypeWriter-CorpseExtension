@@ -61,41 +61,38 @@ class MySqlCorpseRepository(private val dataSource: DataSource) : CorpseReposito
         false
     }
 
+    // save and delete throw: the caller retries, then records what could not be written.
     override fun save(record: CorpseRecord) {
-        runCatching {
-            dataSource.connection.use { connection ->
-                connection.prepareStatement(UPSERT).use { statement ->
-                    statement.setString(1, record.corpseId.toString())
-                    statement.setString(2, record.ownerUuid.toString())
-                    statement.setString(3, record.ownerName)
-                    statement.setString(4, record.worldUid.toString())
-                    statement.setDouble(5, record.x)
-                    statement.setDouble(6, record.y)
-                    statement.setDouble(7, record.z)
-                    statement.setFloat(8, record.yaw)
-                    statement.setFloat(9, record.pitch)
-                    statement.setString(10, CorpseItemCodec.encode(record.inventory))
-                    statement.setInt(11, record.experience)
-                    statement.setLong(12, record.createdAt)
-                    statement.setLong(13, record.expiresAt)
-                    statement.setBoolean(14, record.access.onlyOwnerCanLoot)
-                    statement.setInt(15, record.access.ownerProtectionSeconds)
-                    statement.setString(16, record.definitionId)
-                    statement.executeUpdate()
-                }
+        dataSource.connection.use { connection ->
+            connection.prepareStatement(UPSERT).use { statement ->
+                statement.setString(1, record.corpseId.toString())
+                statement.setString(2, record.ownerUuid.toString())
+                statement.setString(3, record.ownerName)
+                statement.setString(4, record.worldUid.toString())
+                statement.setDouble(5, record.x)
+                statement.setDouble(6, record.y)
+                statement.setDouble(7, record.z)
+                statement.setFloat(8, record.yaw)
+                statement.setFloat(9, record.pitch)
+                statement.setString(10, CorpseItemCodec.encode(record.inventory, record.unreadableItems))
+                statement.setInt(11, record.experience)
+                statement.setLong(12, record.createdAt)
+                statement.setLong(13, record.expiresAt)
+                statement.setBoolean(14, record.access.onlyOwnerCanLoot)
+                statement.setInt(15, record.access.ownerProtectionSeconds)
+                statement.setString(16, record.definitionId)
+                statement.executeUpdate()
             }
-        }.onFailure { logger.warning("[Corpse] Failed to save corpse ${record.corpseId}: ${it.message}") }
+        }
     }
 
     override fun delete(corpseId: UUID) {
-        runCatching {
-            dataSource.connection.use { connection ->
-                connection.prepareStatement("DELETE FROM $TABLE WHERE corpse_id = ?").use { statement ->
-                    statement.setString(1, corpseId.toString())
-                    statement.executeUpdate()
-                }
+        dataSource.connection.use { connection ->
+            connection.prepareStatement("DELETE FROM $TABLE WHERE corpse_id = ?").use { statement ->
+                statement.setString(1, corpseId.toString())
+                statement.executeUpdate()
             }
-        }.onFailure { logger.warning("[Corpse] Failed to delete corpse $corpseId: ${it.message}") }
+        }
     }
 
     override fun loadAll(): List<CorpseRecord> = runCatching {
@@ -115,26 +112,41 @@ class MySqlCorpseRepository(private val dataSource: DataSource) : CorpseReposito
         emptyList()
     }
 
-    private fun read(results: ResultSet): CorpseRecord? = runCatching {
-        CorpseRecord(
-            corpseId = UUID.fromString(results.getString("corpse_id")),
-            ownerUuid = UUID.fromString(results.getString("owner_uuid")),
-            ownerName = results.getString("owner_name"),
-            worldUid = UUID.fromString(results.getString("world_uid")),
-            x = results.getDouble("x"),
-            y = results.getDouble("y"),
-            z = results.getDouble("z"),
-            yaw = results.getFloat("yaw"),
-            pitch = results.getFloat("pitch"),
-            inventory = CorpseItemCodec.decode(results.getString("inventory")),
-            experience = results.getInt("experience"),
-            createdAt = results.getLong("created_at"),
-            expiresAt = results.getLong("expires_at"),
-            access = CorpseAccess(
-                onlyOwnerCanLoot = results.getBoolean("only_owner"),
-                ownerProtectionSeconds = results.getInt("protection_seconds"),
-            ),
-            definitionId = results.getString("definition_id"),
-        )
-    }.getOrNull()
+    /** A row that cannot be read is logged and left in the table, like an unreadable JSON entry. */
+    private fun read(results: ResultSet): CorpseRecord? {
+        val rawId = runCatching { results.getString("corpse_id") }.getOrNull()
+        return runCatching {
+            val owner = results.getString("owner_name")
+            val decoded = CorpseItemCodec.decode(results.getString("inventory"))
+            decoded.unreadable.forEach { (slot, item) ->
+                logger.warning(
+                    "[Corpse] Corpse $rawId of $owner: item in slot $slot could not be read " +
+                        "(${item.cause}); its text is kept as stored: ${item.token}"
+                )
+            }
+            CorpseRecord(
+                corpseId = UUID.fromString(rawId),
+                ownerUuid = UUID.fromString(results.getString("owner_uuid")),
+                ownerName = owner,
+                worldUid = UUID.fromString(results.getString("world_uid")),
+                x = results.getDouble("x"),
+                y = results.getDouble("y"),
+                z = results.getDouble("z"),
+                yaw = results.getFloat("yaw"),
+                pitch = results.getFloat("pitch"),
+                inventory = decoded.items,
+                experience = results.getInt("experience"),
+                createdAt = results.getLong("created_at"),
+                expiresAt = results.getLong("expires_at"),
+                access = CorpseAccess(
+                    onlyOwnerCanLoot = results.getBoolean("only_owner"),
+                    ownerProtectionSeconds = results.getInt("protection_seconds"),
+                ),
+                definitionId = results.getString("definition_id"),
+                unreadableItems = decoded.unreadable.mapValues { it.value.token },
+            )
+        }.onFailure {
+            logger.warning("[Corpse] Could not decode stored corpse $rawId, the row is left untouched: ${it.stackTraceToString()}")
+        }.getOrNull()
+    }
 }

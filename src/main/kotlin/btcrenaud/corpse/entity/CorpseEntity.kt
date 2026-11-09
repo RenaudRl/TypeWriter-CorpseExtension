@@ -32,6 +32,7 @@ interface CorpseEntity {
     val playerUUID: UUID
     val playerName: String
     val inventory: List<ItemStack>
+    /** Experience still held; [takeExperience] empties it. */
     val experience: Int
     val location: Location
     val createdAt: Long
@@ -63,8 +64,28 @@ interface CorpseEntity {
     /** Whether [player] may take loot from this corpse right now. */
     fun canLoot(player: Player): Boolean
 
+    /** Slot to raw text of stored items that could not be read; kept so the next save does not erase them. */
+    val unreadableItems: Map<Int, String> get() = emptyMap()
+
     /** Remove the item at [slot] and return it, or null if empty or out of bounds. */
     fun removeItem(slot: Int): ItemStack?
+
+    /**
+     * Empty the corpse and return what it held, by slot.
+     *
+     * One step under the same lock as [removeItem], never a copy taken earlier: a click that took a
+     * slot a moment before is not in the result, and a click arriving after finds nothing.
+     */
+    fun takeAll(): Map<Int, ItemStack>
+
+    /** Put [item] back in [slot] when that slot is empty. For a hand-over that failed half way. */
+    fun restoreItem(slot: Int, item: ItemStack): Boolean
+
+    /** Take the experience out of the corpse; a second call returns 0. */
+    fun takeExperience(): Int
+
+    /** Put back experience taken by [takeExperience] when the hand-over failed. */
+    fun restoreExperience(amount: Int)
 
     /** Whether every slot is now empty. */
     fun isEmpty(): Boolean

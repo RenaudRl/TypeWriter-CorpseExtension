@@ -14,8 +14,10 @@ interface CorpseRepository {
     /** Create the backing store. Returns false when the store is unusable. */
     fun initialize(): Boolean
 
+    /** Throws when the record could not be written; the caller retries and reports. */
     fun save(record: CorpseRecord)
 
+    /** Throws when the record could not be removed; the caller retries and marks it for purging. */
     fun delete(corpseId: UUID)
 
     fun loadAll(): List<CorpseRecord>

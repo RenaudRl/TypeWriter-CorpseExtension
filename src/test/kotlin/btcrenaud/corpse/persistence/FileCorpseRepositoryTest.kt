@@ -6,6 +6,7 @@ import java.nio.file.Files
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -88,6 +89,31 @@ class FileCorpseRepositoryTest {
         val reloaded = repository(file).apply { initialize() }.loadAll()
         assertEquals(listOf(good.corpseId), reloaded.map { it.corpseId })
         assertTrue(warnings.any { "invalid id" in it }, warnings.toString())
+    }
+
+    @Test
+    fun `a failed delete is reported and a retry still reaches the file`() {
+        val folder = directory()
+        val file = File(folder, "corpses.json")
+        val saved = record()
+        val repository = repository(file).apply { initialize(); save(saved) }
+
+        // A directory where the temporary file goes makes the write fail.
+        val blocker = File(folder, "corpses.json.tmp").apply { mkdirs() }
+        assertFailsWith<Exception> { repository.delete(saved.corpseId) }
+        assertEquals(1, repository(file).apply { initialize() }.loadAll().size, "the file still holds the corpse")
+
+        blocker.delete()
+        repository.delete(saved.corpseId)
+        assertTrue(repository(file).apply { initialize() }.loadAll().isEmpty())
+    }
+
+    @Test
+    fun `a failed save is reported instead of swallowed`() {
+        val folder = directory()
+        val repository = repository(File(folder, "corpses.json")).apply { initialize() }
+        File(folder, "corpses.json.tmp").mkdirs()
+        assertFailsWith<Exception> { repository.save(record()) }
     }
 
     @Test

@@ -29,6 +29,8 @@ data class CorpseRecord(
     val expiresAt: Long,
     val access: CorpseAccess,
     val definitionId: String,
+    /** Slot to raw text of the stored items that could not be read; written back untouched. */
+    val unreadableItems: Map<Int, String> = emptyMap(),
 ) {
     /** The stored location, or null when the world no longer exists on this server. */
     fun toLocation(): Location? {
@@ -55,6 +57,7 @@ data class CorpseRecord(
                 expiresAt = corpse.expiresAt,
                 access = corpse.access,
                 definitionId = corpse.definitionId,
+                unreadableItems = corpse.unreadableItems,
             )
         }
     }

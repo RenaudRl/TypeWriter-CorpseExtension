@@ -101,7 +101,7 @@ class FileCorpseRepository(
             z = record.z,
             yaw = record.yaw,
             pitch = record.pitch,
-            inventory = CorpseItemCodec.encode(record.inventory),
+            inventory = CorpseItemCodec.encode(record.inventory, record.unreadableItems),
             experience = record.experience,
             createdAt = record.createdAt,
             expiresAt = record.expiresAt,
@@ -113,11 +113,21 @@ class FileCorpseRepository(
     }
 
     override fun delete(corpseId: UUID) {
-        if (cache.remove(corpseId) != null) flush()
+        // A retry after a failed write finds the corpse already gone from the cache: it still has
+        // to reach the file, which is what [dirty] remembers.
+        val removed = cache.remove(corpseId) != null
+        if (removed || dirty) flush()
     }
 
     override fun loadAll(): List<CorpseRecord> = cache.values.mapNotNull { stored ->
         runCatching {
+            val decoded = CorpseItemCodec.decode(stored.inventory)
+            decoded.unreadable.forEach { (slot, item) ->
+                warn(
+                    "[Corpse] Corpse ${stored.corpseId} of ${stored.ownerName}: item in slot $slot could not be read " +
+                        "(${item.cause}); its text is kept as stored: ${item.token}"
+                )
+            }
             CorpseRecord(
                 corpseId = UUID.fromString(stored.corpseId),
                 ownerUuid = UUID.fromString(stored.ownerUuid),
@@ -128,28 +138,35 @@ class FileCorpseRepository(
                 z = stored.z,
                 yaw = stored.yaw,
                 pitch = stored.pitch,
-                inventory = CorpseItemCodec.decode(stored.inventory),
+                inventory = decoded.items,
                 experience = stored.experience,
                 createdAt = stored.createdAt,
                 expiresAt = stored.expiresAt,
                 access = CorpseAccess(stored.onlyOwnerCanLoot, stored.ownerProtectionSeconds),
                 definitionId = stored.definitionId,
+                unreadableItems = decoded.unreadable.mapValues { it.value.token },
             )
         }.onFailure { warn("[Corpse] Could not decode stored corpse ${stored.corpseId}: ${it.message}") }
             .getOrNull()
     }
 
+    /** True while the file does not match the cache because the last write failed. */
+    private var dirty = false
+
     /**
      * Writes the whole cache, through a temporary file renamed over the real one, so a crash in the
      * middle of a write leaves the previous complete file instead of a truncated one.
+     *
+     * Throws when the write fails: the caller retries, then records the corpse for purging. It used
+     * to log and carry on, so a looted corpse could stay in the file and come back after a restart.
      */
     private fun flush() {
-        runCatching {
-            file.parentFile?.mkdirs()
-            val temporary = file.resolveSibling("${file.name}.tmp")
-            temporary.writeText(gson.toJson(cache.values.toList()))
-            replaceFile(temporary)
-        }.onFailure { warn("[Corpse] Could not write ${file.path}: ${it.message}") }
+        dirty = true
+        file.parentFile?.mkdirs()
+        val temporary = file.resolveSibling("${file.name}.tmp")
+        temporary.writeText(gson.toJson(cache.values.toList()))
+        replaceFile(temporary)
+        dirty = false
     }
 
     private fun replaceFile(temporary: File) {

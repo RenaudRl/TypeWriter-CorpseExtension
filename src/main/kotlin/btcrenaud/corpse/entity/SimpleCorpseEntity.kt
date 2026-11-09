@@ -18,20 +18,27 @@ class SimpleCorpseEntity(
     override val playerUUID: UUID,
     override val playerName: String,
     inventory: List<ItemStack>,
-    override val experience: Int,
+    experience: Int,
     override val location: Location,
     override val access: CorpseAccess = CorpseAccess.OPEN,
     override val definitionId: String = "",
     override val createdAt: Long = System.currentTimeMillis(),
     override val expiresAt: Long = 0L,
     private val display: CorpseDisplay,
+    override val unreadableItems: Map<Int, String> = emptyMap(),
 ) : CorpseEntity {
 
-    private val mutableInventory = inventory.map { it.clone() }.toMutableList()
+    private val contents = CorpseContents(
+        items = inventory,
+        experience = experience,
+        isEmpty = { it.type.isAir },
+        empty = { ItemStack(Material.AIR) },
+        copy = { it.clone() },
+    )
 
-    // Guarded by the list itself: clicks on a corpse can come from several regions at once.
-    override val inventory: List<ItemStack>
-        get() = synchronized(mutableInventory) { mutableInventory.map { it.clone() } }
+    override val inventory: List<ItemStack> get() = contents.items
+
+    override val experience: Int get() = contents.heldExperience
 
     override fun tick() = display.tick()
 
@@ -49,15 +56,17 @@ class SimpleCorpseEntity(
         return elapsed >= access.ownerProtectionSeconds * 1000L
     }
 
-    override fun removeItem(slot: Int): ItemStack? = synchronized(mutableInventory) {
-        if (slot !in mutableInventory.indices) return@synchronized null
-        val item = mutableInventory[slot]
-        if (item.type.isAir) return@synchronized null
-        mutableInventory[slot] = ItemStack(Material.AIR)
-        item
-    }
+    override fun removeItem(slot: Int): ItemStack? = contents.remove(slot)
 
-    override fun isEmpty(): Boolean = synchronized(mutableInventory) { mutableInventory.all { it.type.isAir } }
+    override fun takeAll(): Map<Int, ItemStack> = contents.takeAll()
+
+    override fun restoreItem(slot: Int, item: ItemStack): Boolean = contents.restore(slot, item)
+
+    override fun takeExperience(): Int = contents.takeExperience()
+
+    override fun restoreExperience(amount: Int) = contents.restoreExperience(amount)
+
+    override fun isEmpty(): Boolean = contents.isEmpty()
 
     /** Push updated render state (glow, name, equipment) to every viewer. */
     fun updateProperties(properties: List<EntityProperty>) = display.updateProperties(properties)
