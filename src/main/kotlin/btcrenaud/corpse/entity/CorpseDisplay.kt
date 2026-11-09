@@ -7,6 +7,7 @@ import com.typewritermc.engine.paper.entry.entity.entityShowRange
 import com.typewritermc.engine.paper.entry.entries.EntityProperty
 import com.typewritermc.engine.paper.logger
 import btcrenaud.corpse.utils.CorpseDiagnostics
+import btcrenaud.corpse.utils.PlayerPositions
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import java.util.UUID
@@ -28,6 +29,8 @@ import java.util.concurrent.ConcurrentHashMap
 class CorpseDisplay(
     private val creator: EntityCreator,
     val position: PositionProperty,
+    /** Unique id of the Bukkit world [position] is in; [position] itself only carries its name. */
+    private val worldId: UUID,
     initialProperties: List<EntityProperty> = emptyList(),
     private val showRange: Double = entityShowRange,
     /**
@@ -52,6 +55,7 @@ class CorpseDisplay(
     }
 
     private val entities = ConcurrentHashMap<UUID, View>()
+    private val spawnBackoff = SpawnBackoff()
 
     @Volatile
     private var properties: List<EntityProperty> = initialProperties
@@ -72,23 +76,31 @@ class CorpseDisplay(
         if (disposed) return
 
         val rangeSquared = showRange * showRange
+        val now = System.currentTimeMillis()
 
+        // Positions come from [PlayerPositions], sampled on each player's own thread: this runs on
+        // the global region, which may not read a player's location on Folia.
         // Drop viewers that went offline, changed world or walked out of range.
         entities.entries.removeIf { (playerId, view) ->
-            val player = Bukkit.getPlayer(playerId)
-            val stillSees = player != null &&
-                player.isOnline &&
-                (position.distanceSquared(player.location) ?: Double.MAX_VALUE) <= rangeSquared
+            val stillSees = inRange(PlayerPositions.spot(playerId), rangeSquared)
             if (!stillSees) runCatching { view.root.dispose() }
             !stillSees
         }
 
         // Spawn for viewers that came into range.
-        for (player in Bukkit.getOnlinePlayers()) {
-            val distance = position.distanceSquared(player.location) ?: continue
-            if (distance > rangeSquared) continue
-            if (entities.containsKey(player.uniqueId)) continue
-            spawnFor(player)?.let { entities[player.uniqueId] = View(it) }
+        PlayerPositions.forEach { playerId, spot ->
+            if (entities.containsKey(playerId)) return@forEach
+            if (!inRange(spot, rangeSquared)) {
+                spawnBackoff.forget(playerId)
+                return@forEach
+            }
+            if (!spawnBackoff.allowed(playerId, now)) return@forEach
+            val player = Bukkit.getPlayer(playerId) ?: return@forEach
+            val entity = spawnFor(player, now)
+            if (entity != null) {
+                entities[playerId] = View(entity)
+                spawnBackoff.forget(playerId)
+            }
         }
 
         entities.values.forEach { view ->
@@ -120,7 +132,10 @@ class CorpseDisplay(
         entities.clear()
     }
 
-    private fun spawnFor(player: Player): FakeEntity? = runCatching {
+    private fun inRange(spot: PlayerSpot?, rangeSquared: Double): Boolean =
+        ViewerRules.isWithin(spot, worldId, position.x, position.y, position.z, rangeSquared)
+
+    private fun spawnFor(player: Player, now: Long): FakeEntity? = runCatching {
         val entity = creator.create(player)
         // Order matters: spawn() sends the spawn packet and registers the viewer, properties are
         // only meaningful on an entity the client already knows about.
@@ -131,7 +146,10 @@ class CorpseDisplay(
         entity
     }.onFailure {
         // Swallowing this is what hid the real cause of "the corpse does not react" for two rounds:
-        // a throw here leaves no entity and no message at all.
-        logger.warning("[Corpse] Failed to spawn corpse for ${player.name}: ${it.stackTraceToString()}")
+        // a throw here leaves no entity and no message at all. The whole trace is given once per
+        // run of failures; the backoff keeps the retries from repeating it every tick.
+        val failures = spawnBackoff.failed(player.uniqueId, now)
+        val detail = if (failures == 1) it.stackTraceToString() else "${it::class.simpleName}: ${it.message}"
+        logger.warning("[Corpse] Failed to spawn corpse for ${player.name} (failure $failures in a row, retrying later): $detail")
     }.getOrNull()
 }

@@ -10,6 +10,7 @@ import btcrenaud.corpse.text.sendCorpseText
 import btcrenaud.corpse.utils.CorpseDiagnostics
 import btcrenaud.corpse.utils.CorpseScheduler
 import btcrenaud.corpse.utils.Failures
+import btcrenaud.corpse.utils.PlayerPositions
 import com.typewritermc.engine.paper.entry.entries.get
 import com.typewritermc.engine.paper.events.AsyncFakeEntityInteract
 import com.typewritermc.engine.paper.logger
@@ -18,6 +19,7 @@ import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.PlayerDeathEvent
+import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.event.player.PlayerRespawnEvent
 import org.bukkit.inventory.ItemStack
@@ -32,10 +34,14 @@ object CorpseDeathListener : Listener {
     fun initialize(plugin: Plugin) {
         if (initialized) return
         plugin.server.pluginManager.registerEvents(this, plugin)
+        // Players already online when the extension loads (a reload) have no join event to come.
+        plugin.server.onlinePlayers.forEach { PlayerPositions.track(it) }
         initialized = true
     }
 
     fun shutdown() {
+        PlayerPositions.untrackAll()
+        PlayerJoinEvent.getHandlerList().unregister(this)
         PlayerDeathEvent.getHandlerList().unregister(this)
         PlayerRespawnEvent.getHandlerList().unregister(this)
         PlayerQuitEvent.getHandlerList().unregister(this)
@@ -76,7 +82,7 @@ object CorpseDeathListener : Listener {
 
         // The event's own drop list rather than the live inventory: it already reflects
         // keepInventory, Curse of Vanishing and items other plugins chose to keep for the player.
-        val loot = DeathLoot.of<ItemStack>(
+        val loot = DeathLoot.forCorpse<ItemStack>(
             drops = event.drops,
             droppedExperience = event.droppedExp,
             keepInventory = event.keepInventory,
@@ -84,7 +90,6 @@ object CorpseDeathListener : Listener {
             isEmpty = { it.type.isAir || it.amount <= 0 },
             copy = { it.clone() },
         ) ?: return
-        if (loot.items.isEmpty() && loot.experience == 0) return
 
         // Picked from the death world, so a definition can be scoped to the nether or an event map.
         val definition = CorpseManager.definitionFor(world.name, world.key().asString())
@@ -141,21 +146,22 @@ object CorpseDeathListener : Listener {
         if (event.action != InteractAction.INTERACT && event.action != InteractAction.INTERACT_AT) return
         if (corpse == null) return
 
-        // The event is async: the player's state and every `Var` (placeholders may touch the world)
-        // are read after the hop onto the corpse's region, never here. Looting mutates the world too.
-        CorpseScheduler.runAt(corpse.location) {
+        // The event is async. Everything below reads or changes the player (sneaking, position,
+        // every `Var`, messages, the menu, their inventory and experience), so it runs on the
+        // thread that owns them. Only the drops hop to the corpse's region, inside the manager.
+        CorpseScheduler.runForEntity(player) {
             val settings = settings()
 
             // The client repeats the packet while the button is held, and a right-click can also yield
             // both actions at once. Without this, one gesture opened the menu several times over — or,
             // in direct mode, looted twice.
             if (!claimInteraction(player.uniqueId, settings.interactionCooldownMillis.get(player).toLong())) {
-                return@runAt
+                return@runForEntity
             }
 
             if (!isInReach(player, corpse.location, settings.interactionReach.get(player))) {
                 player.sendCorpseText(settings.outOfReachMessage.get(player))
-                return@runAt
+                return@runForEntity
             }
 
             // Sneaking reaches the other mode, so a player can always get at both without a command.
@@ -214,8 +220,15 @@ object CorpseDeathListener : Listener {
         )
     }
 
+    /** Starts following where the player is, for the corpse display (see [PlayerPositions]). */
+    @EventHandler
+    fun onPlayerJoin(event: PlayerJoinEvent) {
+        PlayerPositions.track(event.player)
+    }
+
     @EventHandler
     fun onPlayerQuit(event: PlayerQuitEvent) {
+        PlayerPositions.untrack(event.player.uniqueId)
         lastInteraction.remove(event.player.uniqueId)
         CorpseGUI.forget(event.player.uniqueId)
     }

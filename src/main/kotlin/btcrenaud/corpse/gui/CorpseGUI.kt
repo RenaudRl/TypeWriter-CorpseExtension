@@ -6,6 +6,7 @@ import btcrenaud.corpse.manager.CorpseManager
 import btcrenaud.corpse.text.CorpseText
 import btcrenaud.corpse.text.corpseComponent
 import btcrenaud.corpse.text.sendCorpseText
+import btcrenaud.corpse.utils.Failures
 import btcrenaud.gui.GuiType
 import btcrenaud.gui.InventorySize
 import btcrenaud.gui.api.GuiSlot
@@ -14,6 +15,7 @@ import btcrenaud.gui.api.MenuDefinition
 import btcrenaud.gui.api.SimpleLayout
 import btcrenaud.gui.services.MenuSessionService
 import com.typewritermc.engine.paper.entry.entries.get
+import com.typewritermc.engine.paper.logger
 import net.kyori.adventure.text.Component
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
@@ -248,7 +250,16 @@ object CorpseGUI {
             // Only what did not fit is dropped: dropping the whole stack as well duplicated the
             // part that had already gone into the inventory.
             player.sendCorpseText(settings.inventoryFullMessage.get(player))
-            leftover.values.forEach { player.world.dropItemNaturally(player.location, it) }
+            leftover.values.forEach { stack ->
+                try {
+                    player.world.dropItemNaturally(player.location, stack)
+                } catch (failure: Throwable) {
+                    if (Failures.isFatal(failure)) throw failure
+                    // Never lose it: the stack goes back into the slot it came from.
+                    logger.warning("[Corpse] Could not drop slot $slot of corpse ${live.corpseId} ($stack), putting it back: ${failure.stackTraceToString()}")
+                    live.restoreItem(slot, stack)
+                }
+            }
         }
 
         // The slot is empty in memory now; storage has to agree or a restart would hand it back.

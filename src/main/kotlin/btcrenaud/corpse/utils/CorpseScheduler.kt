@@ -4,6 +4,7 @@ import com.typewritermc.engine.paper.plugin
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.entity.Entity
+import org.bukkit.plugin.IllegalPluginAccessException
 import java.util.logging.Level
 
 /**
@@ -70,14 +71,61 @@ object CorpseScheduler {
      * Run on the region owning [location]. Required for dropping items, spawning experience orbs
      * and spawning particles, all of which mutate the world at a specific place.
      */
-    fun runAt(location: Location, task: () -> Unit) {
-        if (!plugin.isEnabled) return
-        if (folia) {
-            Bukkit.getRegionScheduler().execute(plugin, location) { guarded("region task", task) }
-        } else if (Bukkit.isPrimaryThread()) {
-            guarded("region task", task)
-        } else {
-            Bukkit.getScheduler().runTask(plugin, Runnable { guarded("region task", task) })
+    fun runAt(location: Location, task: () -> Unit): Boolean {
+        if (!plugin.isEnabled) return false
+        try {
+            if (folia) {
+                Bukkit.getRegionScheduler().execute(plugin, location) { guarded("region task", task) }
+            } else if (Bukkit.isPrimaryThread()) {
+                guarded("region task", task)
+            } else {
+                Bukkit.getScheduler().runTask(plugin, Runnable { guarded("region task", task) })
+            }
+            return true
+        } catch (failure: IllegalPluginAccessException) {
+            // Disabled between the check and the call: the caller keeps what it meant to hand over.
+            return false
+        }
+    }
+
+    /**
+     * Run on the thread that owns [entity] as soon as possible. Everything that reads or changes a
+     * player (position, inventory, experience, messages, menus) goes through here on Folia.
+     */
+    fun runForEntity(entity: Entity, task: () -> Unit): Boolean {
+        if (!plugin.isEnabled) return false
+        try {
+            if (folia) {
+                entity.scheduler.run(plugin, { _ -> guarded("entity task", task) }, null)
+            } else if (Bukkit.isPrimaryThread()) {
+                guarded("entity task", task)
+            } else {
+                Bukkit.getScheduler().runTask(plugin, Runnable { guarded("entity task", task) })
+            }
+            return true
+        } catch (failure: IllegalPluginAccessException) {
+            return false
+        }
+    }
+
+    /**
+     * Repeating task on the thread that owns [entity]. On Paper it is the main thread, and the task
+     * keeps running until cancelled, so the caller cancels it when the entity leaves.
+     */
+    fun runForEntityTimer(entity: Entity, periodTicks: Long, task: () -> Unit): Task? {
+        if (!plugin.isEnabled) return null
+        return try {
+            if (folia) {
+                entity.scheduler.runAtFixedRate(plugin, { _ -> guarded("entity timer", task) }, null, 1L, periodTicks)
+                    ?.let { FoliaTask(it) }
+            } else {
+                PaperTask(
+                    Bukkit.getScheduler()
+                        .runTaskTimer(plugin, Runnable { guarded("entity timer", task) }, 1L, periodTicks)
+                )
+            }
+        } catch (failure: IllegalPluginAccessException) {
+            null
         }
     }
 
