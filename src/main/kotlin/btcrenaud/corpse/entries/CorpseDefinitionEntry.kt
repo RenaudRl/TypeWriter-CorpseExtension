@@ -78,12 +78,12 @@ class CorpseDefinitionEntry(
     @Default("0.0")
     val verticalOffset: Var<Double> = ConstVar(0.0),
     @Help("How the corpse is rotated.")
-    @Default("RANDOM")
+    @Default("\"RANDOM\"")
     val rotationMode: CorpseRotationMode = CorpseRotationMode.RANDOM,
 
     // ─── Pose and animation ────────────────────────────────────
     @Help("Body pose. Only used by the plain player model; model backends pose themselves.")
-    @Default("LYING")
+    @Default("\"LYING\"")
     val pose: CorpsePose = CorpsePose.LYING,
     @Help("Play an animation when the corpse appears. Model backends only.")
     @Default("true")

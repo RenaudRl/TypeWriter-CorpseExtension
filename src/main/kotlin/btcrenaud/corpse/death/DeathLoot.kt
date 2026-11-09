@@ -7,7 +7,25 @@ package btcrenaud.corpse.death
  */
 data class DeathLoot<T : Any>(val items: List<T>, val experience: Int) {
 
+    /** Whether there is anything for a corpse to hold. */
+    val hasContent: Boolean get() = items.isNotEmpty() || experience > 0
+
     companion object {
+        /**
+         * The loot a corpse must be made for, or null when the death leaves no corpse: the player
+         * keeps their inventory (`keepInventory`), or there is neither an item nor experience to
+         * hold. The death listener decides with exactly this, so the rule is tested without a server.
+         */
+        fun <T : Any> forCorpse(
+            drops: List<T?>,
+            droppedExperience: Int,
+            keepInventory: Boolean,
+            keepLevel: Boolean,
+            isEmpty: (T) -> Boolean,
+            copy: (T) -> T,
+        ): DeathLoot<T>? =
+            of(drops, droppedExperience, keepInventory, keepLevel, isEmpty, copy)?.takeIf { it.hasContent }
+
         /**
          * The loot a corpse should take over, or null when the death leaves nothing to take over.
          *

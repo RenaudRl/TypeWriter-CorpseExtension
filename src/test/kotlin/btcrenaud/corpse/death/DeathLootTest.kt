@@ -42,6 +42,35 @@ class DeathLootTest {
         assertEquals(emptyList(), result.items)
     }
 
+    private fun corpseLoot(
+        drops: List<String?>,
+        experience: Int = 0,
+        keepInventory: Boolean = false,
+        keepLevel: Boolean = false,
+    ) = DeathLoot.forCorpse(drops, experience, keepInventory, keepLevel, isEmpty = { it.isBlank() }, copy = { it })
+
+    @Test
+    fun `keepInventory leaves no corpse even with drops and experience`() {
+        assertNull(corpseLoot(listOf("sword"), experience = 50, keepInventory = true))
+    }
+
+    @Test
+    fun `no drops and no experience leave no corpse`() {
+        assertNull(corpseLoot(emptyList()))
+        assertNull(corpseLoot(listOf(null, ""), experience = 0))
+    }
+
+    @Test
+    fun `experience that keepLevel cancels leaves no corpse when nothing else drops`() {
+        assertNull(corpseLoot(emptyList(), experience = 40, keepLevel = true))
+    }
+
+    @Test
+    fun `experience alone or drops alone are enough for a corpse`() {
+        assertEquals(30, corpseLoot(emptyList(), experience = 30)!!.experience)
+        assertEquals(listOf("apple"), corpseLoot(listOf("apple"))!!.items)
+    }
+
     @Test
     fun `items are copied so the corpse owns them`() {
         val source = StringBuilder("x").toString()

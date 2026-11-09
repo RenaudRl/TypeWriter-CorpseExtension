@@ -63,13 +63,19 @@ class CorpseSettingsEntry(
             "entity and Corpse cannot remove it. INSTANT_RESPAWN: the player is respawned on the next " +
             "tick, without the death screen. Items and experience drop as in vanilla in both cases."
     )
-    @Default("VANILLA_DEATH_SCREEN")
+    @Default("\"VANILLA_DEATH_SCREEN\"")
     val filteredWorldDeath: FilteredWorldDeath = FilteredWorldDeath.VANILLA_DEATH_SCREEN,
 
     // ─── Lifetime and access ───────────────────────────────────
     @Help("Seconds before the corpse disappears. 0 = never expire.")
     @Default("300")
     val duration: Var<Int> = ConstVar(300),
+    @Help(
+        "When a corpse expires, drop what it holds on the ground at the corpse (and its experience as an orb) " +
+            "instead of destroying it. Off: an expired corpse and its contents are deleted."
+    )
+    @Default("true")
+    val dropOnExpire: Boolean = true,
     @Help("If true, only the dead player may ever loot their own corpse.")
     @Default("false")
     val onlyOwnerCanLoot: Var<Boolean> = ConstVar(false),
@@ -79,7 +85,7 @@ class CorpseSettingsEntry(
 
     // ─── Looting ───────────────────────────────────────────────
     @Help("What a right-click does: open the inventory, hand everything over, or drop it on the ground.")
-    @Default("GUI")
+    @Default("\"GUI\"")
     val lootMode: CorpseLootMode = CorpseLootMode.GUI,
     @Help(
         "Sneaking while interacting uses the other mode: the GUI when looting is direct, " +
@@ -112,6 +118,7 @@ class CorpseSettingsEntry(
     @Default("true")
     val glowEffect: Var<Boolean> = ConstVar(true),
     @Help("Colour of the glow outline.")
+    @Default("-1") // 0xFFFFFFFF as a signed int, the engine's own form for white
     val glowColor: Color = Color.WHITE,
     @Help("Render the armour the player was wearing on the corpse.")
     @Default("true")
@@ -120,17 +127,41 @@ class CorpseSettingsEntry(
     @Default("true")
     val spawnParticles: Var<Boolean> = ConstVar(true),
     @Help("Particle spawned at chest height.")
-    @Default("DAMAGE_INDICATOR")
+    @Default("\"DAMAGE_INDICATOR\"")
     val spawnParticle: Particle = Particle.DAMAGE_INDICATOR,
     @Help("How many of them.")
     @Default("15")
     val spawnParticleCount: Var<Int> = ConstVar(15),
+    @Help("Height above the corpse where the first particle appears, in blocks.")
+    @Default("1.0")
+    val spawnParticleHeight: Var<Double> = ConstVar(1.0),
+    @Help("How far the first particle spreads sideways, in blocks.")
+    @Default("0.3")
+    val spawnParticleSpreadHorizontal: Var<Double> = ConstVar(0.3),
+    @Help("How far the first particle spreads up and down, in blocks.")
+    @Default("0.5")
+    val spawnParticleSpreadVertical: Var<Double> = ConstVar(0.5),
+    @Help("Speed (extra) of the first particle.")
+    @Default("0.1")
+    val spawnParticleSpeed: Var<Double> = ConstVar(0.1),
     @Help("Second particle, spawned slightly higher. Set the count to 0 to use a single layer.")
-    @Default("SOUL")
+    @Default("\"SOUL\"")
     val spawnParticleSecondary: Particle = Particle.SOUL,
     @Help("How many of the second particle.")
     @Default("8")
     val spawnParticleSecondaryCount: Var<Int> = ConstVar(8),
+    @Help("Height above the corpse where the second particle appears, in blocks.")
+    @Default("1.5")
+    val spawnParticleSecondaryHeight: Var<Double> = ConstVar(1.5),
+    @Help("How far the second particle spreads sideways, in blocks.")
+    @Default("0.2")
+    val spawnParticleSecondarySpreadHorizontal: Var<Double> = ConstVar(0.2),
+    @Help("How far the second particle spreads up and down, in blocks.")
+    @Default("0.3")
+    val spawnParticleSecondarySpreadVertical: Var<Double> = ConstVar(0.3),
+    @Help("Speed (extra) of the second particle.")
+    @Default("0.02")
+    val spawnParticleSecondarySpeed: Var<Double> = ConstVar(0.02),
     @Help("Range in blocks within which players hear corpse sounds.")
     @Default("32.0")
     val effectRange: Var<Double> = ConstVar(32.0),
