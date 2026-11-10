@@ -99,4 +99,11 @@ class CorpseBookkeepingTest {
         assertNull(PurgeMarks.openOrNull(directory) { reported = it })
         assertNotNull(reported)
     }
+
+    @Test
+    fun `a relocation is settled when the corpse came back or was destroyed by the settings, not when it was not restored`() {
+        assertTrue(CorpseBookkeeping.relocationSettled(RestoreOutcome.BROUGHT_BACK))
+        assertTrue(CorpseBookkeeping.relocationSettled(RestoreOutcome.DESTROYED_ON_EXPIRY))
+        assertFalse(CorpseBookkeeping.relocationSettled(RestoreOutcome.NOT_RESTORED))
+    }
 }

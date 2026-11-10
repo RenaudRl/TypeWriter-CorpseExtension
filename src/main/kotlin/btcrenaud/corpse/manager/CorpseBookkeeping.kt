@@ -2,6 +2,9 @@ package btcrenaud.corpse.manager
 
 import java.util.UUID
 
+/** What bringing a stored corpse back came to: back, destroyed on purpose because it expired, or not restored (it stays in storage). */
+internal enum class RestoreOutcome { BROUGHT_BACK, DESTROYED_ON_EXPIRY, NOT_RESTORED }
+
 /** Decisions of [CorpseManager] that need no Bukkit, kept here so they can be tested on their own. */
 internal object CorpseBookkeeping {
 
@@ -48,6 +51,13 @@ internal object CorpseBookkeeping {
         "[Corpse] Corpse $corpseId of $ownerName ($itemCount item(s)) is not restored: its world $worldUid is not loaded. " +
             "It stays in storage, but nobody can reach it until that world is loaded again; if that world is deleted (a dungeon run world " +
             "is, with its folder) the items are lost with it."
+
+    /**
+     * Whether a relocation is over after its stored copy was restored: a corpse brought back is, and so is one the settings destroy at
+     * its expiry (nothing to keep, not a failure to report). Anything else leaves the items only in the record at the destination,
+     * which the old corpse must take back.
+     */
+    fun relocationSettled(outcome: RestoreOutcome): Boolean = outcome != RestoreOutcome.NOT_RESTORED
 
     /** The end of the log line written when a corpse could not be deleted from storage. */
     fun deleteFailureOutcome(marked: Boolean, marksAvailable: Boolean): String = when {

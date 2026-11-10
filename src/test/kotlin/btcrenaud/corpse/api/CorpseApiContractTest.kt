@@ -26,4 +26,9 @@ class CorpseApiContractTest {
         assertEquals(CompletableFuture::class.java, method.returnType)
         assertTrue(Modifier.isStatic(method.modifiers))
     }
+
+    @Test
+    fun `the unavailable-store answer keeps the negative value the Dungeon extension mirrors`() {
+        assertEquals(-1, Class.forName("btcrenaud.corpse.api.CorpseApi").getField("STORE_UNAVAILABLE").getInt(null))
+    }
 }

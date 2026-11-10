@@ -4,6 +4,7 @@ import com.typewritermc.core.entries.Query
 import com.typewritermc.core.entries.ref
 import com.typewritermc.core.interaction.InteractionContext
 import com.typewritermc.core.interaction.context
+import btcrenaud.corpse.api.CorpseApi
 import btcrenaud.corpse.entries.*
 import btcrenaud.corpse.entity.CorpseAccess
 import btcrenaud.corpse.entity.CorpseAnimator
@@ -582,20 +583,23 @@ object CorpseManager {
      * Brings out the stored corpses of worlds that are not loaded (the run worlds a killed server left behind, about to be purged):
      * each is moved to [fallback], like the corpse of an offline owner, so its items outlive the world. The worlds are known by uid,
      * which is all a stored corpse keeps. Callable from any thread; completes, at the latest, after [EVACUATION_TIMEOUT_MILLIS],
-     * with the number of corpses moved (0 when the store is not open yet: they then stay dormant, see [CorpseBookkeeping.dormantReport]).
+     * with the number of corpses moved, or [CorpseApi.STORE_UNAVAILABLE] when the store cannot be asked (Corpse not initialized yet, or
+     * shut down, or its repository did not open): the caller must then not throw the worlds away, "none" would be a lie. A timeout
+     * answers 0 and leaves the move in the storage queue: it still happens, and a record is found by world uid, not by any folder.
      */
     fun evacuateDormant(worldUids: Collection<UUID>, fallback: Location): CompletableFuture<Int> {
         val wanted = worldUids.toSet()
+        if (wanted.isEmpty()) return CompletableFuture.completedFuture(0)
         val queue = storage
-        if (wanted.isEmpty() || queue == null || fallback.world == null) return CompletableFuture.completedFuture(0)
+        if (queue == null || fallback.world == null) return CompletableFuture.completedFuture(CorpseApi.STORE_UNAVAILABLE)
         val done = CompletableFuture<Int>()
-        if (!queue.submit { done.complete(relocateDormant(wanted, fallback)) }) done.complete(0)
+        if (!queue.submit { done.complete(relocateDormant(wanted, fallback)) }) done.complete(CorpseApi.STORE_UNAVAILABLE)
         return done.completeOnTimeout(0, EVACUATION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
     }
 
     /** Storage thread only. */
     private fun relocateDormant(wanted: Set<UUID>, fallback: Location): Int {
-        val store = repository ?: return 0
+        val store = repository ?: return CorpseApi.STORE_UNAVAILABLE
         val now = System.currentTimeMillis()
         val settings = settings()
         var moved = 0
@@ -698,7 +702,10 @@ object CorpseManager {
     /**
      * Storage thread only. The corpse is emptied first, under its own lock (a slot taken in the loot menu meanwhile is then not in what
      * moves, so nothing is handed out twice), saved at [destination], then brought back from that record as after a restart, which
-     * replaces (and disposes) the one in the old world. Nothing is deleted: a failed save puts everything back where it was.
+     * replaces (and disposes) the one in the old world. Nothing is deleted: a failed save puts everything back where it was, and so
+     * does a failed restore after the save (the old corpse gets its items back and is saved again at its old place, so the record
+     * and the live corpse agree and the record is not deleted at the old corpse's expiry with the items only it held). True when the
+     * corpse is out, or was destroyed at its expiry as the settings want.
      */
     private fun relocate(corpse: CorpseEntity, destination: Location): Boolean {
         if (activeCorpses[corpse.corpseId] !== corpse) return true
@@ -715,15 +722,22 @@ object CorpseManager {
             taken.forEach { (slot, item) -> inventory[slot] = item }
             val moved = record.copy(inventory = inventory, experience = experience).at(destination)
             if (!writeSave(moved)) {
+                emptied = false
                 putBack(corpse, taken, experience)
                 return false
             }
+            // From here the record at the destination holds the items: only a restore that did not happen puts them back.
+            val outcome = restoreOutcome(moved, System.currentTimeMillis(), settings())
             emptied = false
-            return restore(moved, System.currentTimeMillis(), settings())
+            if (CorpseBookkeeping.relocationSettled(outcome)) return true
+            logger.warning("[Corpse] Corpse ${corpse.corpseId} could not be brought back at its fallback place; it keeps its contents and its old place")
+            putBack(corpse, taken, experience)
+            return false
         } catch (failure: Throwable) {
             if (Failures.isFatal(failure)) throw failure
             logger.warning("[Corpse] Moving corpse ${corpse.corpseId} to its fallback place failed: ${failure.stackTraceToString()}")
-            if (emptied) putBack(corpse, taken, experience)
+            // A restore that threw after replacing the old corpse leaves the new one holding the items: giving them back to the old one too would duplicate them.
+            if (emptied && activeCorpses[corpse.corpseId] === corpse) putBack(corpse, taken, experience)
             return false
         } finally {
             claims.remove(corpse.corpseId)
@@ -758,22 +772,25 @@ object CorpseManager {
     }
 
     /** Brings one stored corpse back. Returns false when it was expired or its world is gone. */
-    private fun restore(record: CorpseRecord, now: Long, settings: CorpseSettingsEntry): Boolean {
+    private fun restore(record: CorpseRecord, now: Long, settings: CorpseSettingsEntry): Boolean =
+        restoreOutcome(record, now, settings) == RestoreOutcome.BROUGHT_BACK
+
+    private fun restoreOutcome(record: CorpseRecord, now: Long, settings: CorpseSettingsEntry): RestoreOutcome {
         // Its deletion failed last time and is still pending: bringing it back would hand out a
         // corpse somebody already emptied.
-        if (purgeMarks?.contains(record.corpseId) == true) return false
+        if (purgeMarks?.contains(record.corpseId) == true) return RestoreOutcome.NOT_RESTORED
         // With dropOnExpire an expired corpse is restored like any other and the tick drops its
         // contents; only a server that destroys expired corpses deletes it here.
         if (record.expiresAt in 1..now && !settings.dropOnExpire) {
             writeDelete(record.corpseId)
-            return false
+            return RestoreOutcome.DESTROYED_ON_EXPIRY
         }
         val location = record.toLocation()
         if (location == null) {
             // Stays in storage untouched; said once per restore so the loss of sight is not silent.
             val items = record.inventory.count { !it.type.isAir } + record.unreadableItems.size
             logger.warning(CorpseBookkeeping.dormantReport(record.corpseId, record.ownerName, items, record.worldUid))
-            return false
+            return RestoreOutcome.NOT_RESTORED
         }
         val world = location.world
         val definition = Query.find<CorpseDefinitionEntry>()
@@ -799,7 +816,7 @@ object CorpseManager {
         // An entry already there (the same corpse restored twice) must not be left rendering
         // behind the one that replaces it.
         activeCorpses.put(record.corpseId, corpse)?.dispose()
-        return true
+        return RestoreOutcome.BROUGHT_BACK
     }
 
     /** Removes the corpses whose deletion failed in an earlier run. Runs on the storage queue. */
