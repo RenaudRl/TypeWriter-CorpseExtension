@@ -2,6 +2,7 @@ package btcrenaud.corpse.api
 
 import btcrenaud.corpse.manager.CorpseManager
 import org.bukkit.Location
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 
 /**
@@ -15,4 +16,11 @@ object CorpseApi {
      */
     @JvmStatic
     fun evacuateWorld(worldName: String, fallback: Location): CompletableFuture<Int> = CorpseManager.evacuateWorld(worldName, fallback)
+
+    /**
+     * Moves the stored corpses of the worlds with these uids, which are not loaded (a killed server left them), to [fallback] before the
+     * worlds are deleted. See [CorpseManager.evacuateDormant].
+     */
+    @JvmStatic
+    fun evacuateDormant(worldUids: Collection<UUID>, fallback: Location): CompletableFuture<Int> = CorpseManager.evacuateDormant(worldUids, fallback)
 }

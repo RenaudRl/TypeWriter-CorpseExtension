@@ -206,12 +206,12 @@ class CorpseSettingsEntry(
     @Placeholder
     @Default("\"<red>This corpse is no longer available.\"")
     val corpseGoneMessage: Var<String> = ConstVar("<red>This corpse is no longer available."),
-    @Help("Shown to the owner when their corpse lay in a world that is being removed (a dungeon run) and its contents were given to them. Placeholder: <count> for the number of items. Leave empty for no message.")
+    @Help("Shown to the owner when their corpse lay in a world that is being removed (a dungeon run) and its contents were given to them. Placeholders: <count> for the number of items returned, <dropped> for how many of them did not fit and fell at the owner's feet (0 when all fit). Leave empty for no message.")
     @Colored
     @Placeholder
-    @Default("\"<gray>Your corpse was in a world that closed: <white><count> <gray>item(s) were returned to you.\"")
+    @Default("\"<gray>Your corpse was in a world that closed: <white><count> <gray>item(s) were returned to you (<white><dropped> <gray>dropped at your feet).\"")
     val evacuatedMessage: Var<String> =
-        ConstVar("<gray>Your corpse was in a world that closed: <white><count> <gray>item(s) were returned to you."),
+        ConstVar("<gray>Your corpse was in a world that closed: <white><count> <gray>item(s) were returned to you (<white><dropped> <gray>dropped at your feet)."),
 
     // ─── Inventory GUI ─────────────────────────────────────────
     @Help("Title of the loot menu. Placeholder: <player> for the dead player's name.")

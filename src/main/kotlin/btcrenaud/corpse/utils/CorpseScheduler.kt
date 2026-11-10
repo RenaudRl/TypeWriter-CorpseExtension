@@ -91,12 +91,18 @@ object CorpseScheduler {
     /**
      * Run on the thread that owns [entity] as soon as possible. Everything that reads or changes a
      * player (position, inventory, experience, messages, menus) goes through here on Folia.
+     *
+     * [retired] runs instead of [task] when the entity is gone before the task could run (a player who logged out): without it the
+     * task is dropped silently, which a caller waiting on it cannot tell from a slow one. It may run more than once, so it must be
+     * idempotent. On Paper the task always runs on the main thread and [retired] is never used.
      */
-    fun runForEntity(entity: Entity, task: () -> Unit): Boolean {
+    fun runForEntity(entity: Entity, retired: (() -> Unit)? = null, task: () -> Unit): Boolean {
         if (!plugin.isEnabled) return false
         try {
             if (folia) {
-                entity.scheduler.run(plugin, { _ -> guarded("entity task", task) }, null)
+                val onRetired = retired?.let { callback -> Runnable { guarded("entity retired", callback) } }
+                // A null answer means the entity was already gone: the retired callback is then not guaranteed to have been queued.
+                if (entity.scheduler.run(plugin, { _ -> guarded("entity task", task) }, onRetired) == null) onRetired?.run()
             } else if (Bukkit.isPrimaryThread()) {
                 guarded("entity task", task)
             } else {

@@ -46,7 +46,8 @@ internal object CorpseBookkeeping {
     /** The WARN written for a stored corpse whose world is not loaded: its owner and what they lose sight of. */
     fun dormantReport(corpseId: UUID, ownerName: String, itemCount: Int, worldUid: UUID): String =
         "[Corpse] Corpse $corpseId of $ownerName ($itemCount item(s)) is not restored: its world $worldUid is not loaded. " +
-            "It stays in storage; its items are not lost but nobody can reach them until that world is back."
+            "It stays in storage, but nobody can reach it until that world is loaded again; if that world is deleted (a dungeon run world " +
+            "is, with its folder) the items are lost with it."
 
     /** The end of the log line written when a corpse could not be deleted from storage. */
     fun deleteFailureOutcome(marked: Boolean, marksAvailable: Boolean): String = when {

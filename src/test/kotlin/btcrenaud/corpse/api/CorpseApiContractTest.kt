@@ -19,4 +19,11 @@ class CorpseApiContractTest {
         assertEquals(CompletableFuture::class.java, method.returnType)
         assertTrue(Modifier.isStatic(method.modifiers))
     }
+
+    @Test
+    fun `the dormant evacuation entry point keeps the name and the static signature the Dungeon extension looks up`() {
+        val method = Class.forName("btcrenaud.corpse.api.CorpseApi").getMethod("evacuateDormant", Collection::class.java, Location::class.java)
+        assertEquals(CompletableFuture::class.java, method.returnType)
+        assertTrue(Modifier.isStatic(method.modifiers))
+    }
 }
