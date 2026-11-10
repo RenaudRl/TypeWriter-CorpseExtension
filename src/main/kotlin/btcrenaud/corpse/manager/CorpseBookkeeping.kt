@@ -26,6 +26,28 @@ internal object CorpseBookkeeping {
             "[Corpse] Corpse $corpseId is being deleted with an unreadable item in slot $slot, its stored text was: $raw"
         }
 
+    /** The corpses of [corpses] that lie in the world called [worldName], by the world name [worldOf] reads. */
+    fun <T> inWorld(corpses: Collection<T>, worldName: String, worldOf: (T) -> String?): List<T> =
+        corpses.filter { worldOf(it) == worldName }
+
+    /**
+     * Hands [items] over one by one: [give] returns what did not fit (null when everything went in). Each item leaves [pending]
+     * as soon as it was offered and its leftover, if any, lands in [surplus] (the part the caller drops at the owner's feet),
+     * so a [give] that fails half way leaves in [pending] exactly what was not offered, and nothing is in neither map.
+     */
+    fun <T> handOver(items: Map<Int, T>, pending: MutableMap<Int, T>, surplus: MutableMap<Int, T>, give: (T) -> T?) {
+        items.forEach { (slot, item) ->
+            val leftover = give(item)
+            pending.remove(slot)
+            if (leftover != null) surplus[slot] = leftover
+        }
+    }
+
+    /** The WARN written for a stored corpse whose world is not loaded: its owner and what they lose sight of. */
+    fun dormantReport(corpseId: UUID, ownerName: String, itemCount: Int, worldUid: UUID): String =
+        "[Corpse] Corpse $corpseId of $ownerName ($itemCount item(s)) is not restored: its world $worldUid is not loaded. " +
+            "It stays in storage; its items are not lost but nobody can reach them until that world is back."
+
     /** The end of the log line written when a corpse could not be deleted from storage. */
     fun deleteFailureOutcome(marked: Boolean, marksAvailable: Boolean): String = when {
         marked -> "it is marked for purging at the next startup"

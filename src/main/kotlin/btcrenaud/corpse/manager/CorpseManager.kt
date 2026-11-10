@@ -51,9 +51,17 @@ import org.bukkit.entity.Item
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 object CorpseManager {
+
+    /**
+     * How long [evacuateWorld] keeps its caller waiting. A garde-fou, not a tuning knob: the hand-over runs in a few
+     * ticks, this only matters when the owner's thread never gets to it (they left while it was queued).
+     */
+    private const val EVACUATION_TIMEOUT_MILLIS = 10_000L
 
     /**
      * How long a reload or shutdown waits for queued storage writes. A garde-fou, not a tuning knob:
@@ -545,6 +553,124 @@ object CorpseManager {
     fun knownEntityIdsFor(playerId: UUID): List<Int> =
         activeCorpses.values.mapNotNull { it.entityIdFor(playerId) }
 
+    // ─── Evacuation ────────────────────────────────────────────
+
+    /**
+     * Takes the corpses out of the world called [worldName], for a world about to be thrown away (the run world of a
+     * dungeon): a body left there would be lost with its items. The owner, when online, gets the contents in their
+     * inventory (the surplus falls at their feet, on their own thread); an offline owner's corpse is moved to [fallback],
+     * a place of a world that stays. Callable from any thread; the future never fails and completes, at the latest, after
+     * [EVACUATION_TIMEOUT_MILLIS], with the number of corpses brought out. A corpse that could not be is kept as it is,
+     * said in the log, and stays in storage.
+     */
+    fun evacuateWorld(worldName: String, fallback: Location): CompletableFuture<Int> {
+        val here = CorpseBookkeeping.inWorld(activeCorpses.values, worldName) { it.location.world?.name }
+        if (here.isEmpty()) return CompletableFuture.completedFuture(0)
+        val settings = settings()
+        val outcomes = here.map { corpse ->
+            val owner = Bukkit.getPlayer(corpse.playerUUID)
+            if (owner != null) handBack(corpse, owner, settings) else moveTo(corpse, fallback)
+        }
+        return CompletableFuture.allOf(*outcomes.toTypedArray())
+            .completeOnTimeout(null, EVACUATION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+            .handle { _, _ ->
+                val brought = outcomes.count { it.isDone && !it.isCompletedExceptionally && it.getNow(false) }
+                if (brought < here.size) {
+                    logger.severe("[Corpse] ${here.size - brought} of ${here.size} corpse(s) of '$worldName' could not be brought out; they stay in storage and are unreachable once that world is gone")
+                }
+                brought
+            }
+    }
+
+    private fun handBack(corpse: CorpseEntity, owner: Player, settings: CorpseSettingsEntry): CompletableFuture<Boolean> {
+        val done = CompletableFuture<Boolean>()
+        val scheduled = CorpseScheduler.runForEntity(owner) {
+            done.complete(
+                try {
+                    giveToOwner(corpse, owner, settings)
+                } catch (failure: Throwable) {
+                    if (Failures.isFatal(failure)) throw failure
+                    logger.warning("[Corpse] Handing corpse ${corpse.corpseId} back to ${owner.name} failed: ${failure.stackTraceToString()}")
+                    false
+                },
+            )
+        }
+        if (!scheduled) done.complete(false)
+        return done
+    }
+
+    /** On the owner's thread. True when the corpse is gone with everything handed over (or was already gone). */
+    private fun giveToOwner(corpse: CorpseEntity, owner: Player, settings: CorpseSettingsEntry): Boolean {
+        val registered = activeCorpses[corpse.corpseId]
+        if (registered == null) return true
+        if (registered !== corpse || !claims.add(corpse.corpseId)) return false
+        val taken = corpse.takeAll()
+        val experience = corpse.takeExperience()
+        val pending = LinkedHashMap(taken)
+        val surplus = linkedMapOf<Int, ItemStack>()
+        var experienceGiven = false
+        try {
+            CorpseBookkeeping.handOver(taken, pending, surplus) { item -> owner.inventory.addItem(item.clone()).values.firstOrNull() }
+            if (experience > 0) owner.giveExp(experience)
+            experienceGiven = true
+            val failedDrops = linkedMapOf<Int, ItemStack>()
+            surplus.forEach { (slot, item) ->
+                try {
+                    owner.world.dropItemNaturally(owner.location, item)
+                } catch (failure: Throwable) {
+                    if (Failures.isFatal(failure)) throw failure
+                    failedDrops[slot] = item
+                    logger.warning("[Corpse] Could not drop slot $slot of corpse ${corpse.corpseId} at the feet of ${owner.name} ($item): ${failure.stackTraceToString()}")
+                }
+            }
+            if (failedDrops.isNotEmpty()) {
+                putBack(corpse, failedDrops, 0)
+                return false
+            }
+        } catch (failure: Throwable) {
+            if (Failures.isFatal(failure)) throw failure
+            logger.warning("[Corpse] Emptying corpse ${corpse.corpseId} for ${owner.name} failed, keeping what did not arrive: ${failure.stackTraceToString()}")
+            pending.putAll(surplus)
+            putBack(corpse, pending, CorpseBookkeeping.experienceToPutBack(experience, experienceGiven))
+            return false
+        }
+        completeRemoval(corpse, CorpseExpireReason.LOOTED, taken.size, experience)
+        if (taken.isNotEmpty()) owner.sendCorpseText(settings.evacuatedMessage.get(owner), mapOf("count" to taken.size.toString()))
+        return true
+    }
+
+    private fun moveTo(corpse: CorpseEntity, destination: Location): CompletableFuture<Boolean> {
+        val done = CompletableFuture<Boolean>()
+        val queued = destination.world != null && storage?.submit { done.complete(relocate(corpse, destination)) } == true
+        if (!queued) done.complete(false)
+        return done
+    }
+
+    /**
+     * Storage thread only. The corpse is saved at [destination], then brought back from that record as after a restart,
+     * which replaces (and disposes) the one in the old world. Nothing is deleted: a failed save leaves it where it was.
+     */
+    private fun relocate(corpse: CorpseEntity, destination: Location): Boolean {
+        if (activeCorpses[corpse.corpseId] !== corpse) return true
+        if (!claims.add(corpse.corpseId)) return false
+        try {
+            val record = CorpseRecord.of(corpse) ?: return false
+            val moved = record.copy(
+                worldUid = destination.world.uid,
+                x = destination.x, y = destination.y, z = destination.z,
+                yaw = destination.yaw, pitch = destination.pitch,
+            )
+            if (!writeSave(moved)) return false
+            return restore(moved, System.currentTimeMillis(), settings())
+        } catch (failure: Throwable) {
+            if (Failures.isFatal(failure)) throw failure
+            logger.warning("[Corpse] Moving corpse ${corpse.corpseId} to its fallback place failed: ${failure.stackTraceToString()}")
+            return false
+        } finally {
+            claims.remove(corpse.corpseId)
+        }
+    }
+
     // ─── Persistence ───────────────────────────────────────────
 
     /** Rebuild corpses saved by a previous run. Runs on the storage queue. */
@@ -583,7 +709,13 @@ object CorpseManager {
             writeDelete(record.corpseId)
             return false
         }
-        val location = record.toLocation() ?: return false
+        val location = record.toLocation()
+        if (location == null) {
+            // Stays in storage untouched; said once per restore so the loss of sight is not silent.
+            val items = record.inventory.count { !it.type.isAir } + record.unreadableItems.size
+            logger.warning(CorpseBookkeeping.dormantReport(record.corpseId, record.ownerName, items, record.worldUid))
+            return false
+        }
         val world = location.world
         val definition = Query.find<CorpseDefinitionEntry>()
             .firstOrNull { it.id == record.definitionId }
@@ -652,9 +784,9 @@ object CorpseManager {
         queue.submit { writeDelete(corpseId) }
     }
 
-    /** Storage thread only. Retries, then says loudly what could not be saved. */
-    private fun writeSave(record: CorpseRecord) {
-        val store = repository ?: return
+    /** Storage thread only. Retries, then says loudly what could not be saved. Returns whether the record is stored. */
+    private fun writeSave(record: CorpseRecord): Boolean {
+        val store = repository ?: return false
         val failure = BoundedRetry.run(
             STORAGE_ATTEMPTS, STORAGE_PAUSE_MILLIS,
             onFailure = { attempt, cause ->
@@ -668,6 +800,7 @@ object CorpseManager {
                     "come back if the server restarts before the next successful save. ${failure.stackTraceToString()}"
             )
         }
+        return failure == null
     }
 
     /**
