@@ -3,6 +3,10 @@ plugins {
     id("com.typewritermc.module-plugin") version "2.2.0"
 }
 
+// OmniGUI comes from its published GitHub release, so the extension builds on its own (./gradlew build).
+// 0.21 is the oldest release that carries every GUI API this extension uses; raise it with the GUI release it is built against.
+val omniGuiVersion = "0.21"
+
 group = "btcrenaud"
 version = "0.8"
 
@@ -17,6 +21,16 @@ repositories {
     maven("https://maven.typewritermc.com/beta/")
     maven("https://maven.typewritermc.com/external/")
     maven("https://jitpack.io")
+    ivy {
+        name = "omniGuiGitHubReleases"
+        url = uri("https://github.com/RenaudRl/Typewriter-OmniGUIExtension/releases/download")
+        patternLayout {
+            artifact("[revision]/Typewriter-OmniGUIExtension-$omniGuiVersion.[ext]")
+        }
+        metadataSources {
+            artifact()
+        }
+    }
 }
 
 dependencies {
@@ -25,7 +39,7 @@ dependencies {
     implementation("com.typewritermc:BasicExtension:0.9.0")
     implementation("com.typewritermc:EntityExtension:0.9.0")
     implementation("com.typewritermc:QuestExtension:0.9.0")
-    compileOnly(project(":Typewriter-OmniGUIExtension"))
+    compileOnly("btcrenaud:Typewriter-OmniGUIExtension:v$omniGuiVersion@jar")
     compileOnly("com.github.retrooper:packetevents-spigot:2.13.0")
     compileOnly("com.github.Tofaa2.EntityLib:api:2.4.11")
     // Pure-logic tests only: paper-api is here for MiniMessage, no server is started.

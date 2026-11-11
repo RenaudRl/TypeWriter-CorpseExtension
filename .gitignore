@@ -1,7 +1,9 @@
 build/
 .gradle/
 .kotlin/
+bin/
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.zip
 *.log
 .idea/
