@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.8 - 2026-11-11
+
+**Update Corpse and the Dungeon extension together** (Dungeon 1.4.0 and Corpse 0.8). With an older
+Corpse, the corpses of an orphaned run world are not brought out and are lost with the world.
+Needs GUI (OmniGUI) 0.21 or later.
+
+- **World evacuation**: a world about to be removed (a dungeon run) can have its corpses brought
+  out first, through the new `CorpseApi`. Online owner: the contents are handed over, with the new
+  `evacuatedMessage`; if they cannot take it all, the body is moved instead. Offline owner: the
+  body is moved to a fallback location. Corpses stored for a world that is not loaded are moved
+  too, and a warning at startup lists the dormant ones. A store that cannot be asked is told apart
+  from "no corpse", and a corpse whose move fails is put back whole.
+- New `corpse_settings` fields, all with a default: `dropOnExpire`, eight particle offsets
+  (`spawnParticleHeight`, `spawnParticleSpreadHorizontal`, `spawnParticleSpreadVertical`,
+  `spawnParticleSpeed`, and the four `spawnParticleSecondary...` equivalents) and `evacuatedMessage`.
+  A third-party extension that builds `corpse_settings` in code must be recompiled.
+- **`dropOnExpire`** (on by default): an expired corpse now drops what it holds on the ground, and
+  its experience as an orb, instead of deleting it. Turn it off to keep the 0.7 behaviour.
+- **Fix**: no corpse when `keepInventory` is on and the drops are empty.
+- **Fix**: storage errors are retried and reported, unreadable items are kept, a corpse is emptied
+  under its own lock, and an unavailable store is no longer taken for "no corpse".
+- **Fix**: Folia thread ownership for looting and for the viewers; the contents are handed over
+  before the corpse is deleted; reload drains the pending work; void deaths and expiry are handled.
+- **Fix**: experience nobody claimed is given back, a late hand-over after shutdown is refused, and
+  the purge marks are hardened.
+- **Build**: the extension builds on its own (`./gradlew build`, Gradle wrapper included). OmniGUI
+  comes from its GitHub release (0.21) instead of the multi-extension workspace.
+
+## 0.7 - 2026-10-16
+
+- Built against GUI (OmniGUI) 0.20. Needs GUI 0.20 or later: the GUI slot class gained a field in
+  0.20, so the previous build (made against 0.15) no longer links with it. No change to entries or
+  behaviour.
+- The build no longer declares an unused GUI release repository.
+
 ## 0.6 - 2026-10-08
 
 (0.4 and 0.5 were not announced here.)

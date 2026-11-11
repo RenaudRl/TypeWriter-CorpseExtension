@@ -34,11 +34,20 @@ infrastructure.
   Corpse entity and Corpse cannot remove them. `INSTANT_RESPAWN` respawns the player on the next
   tick, without the death screen. Items and experience drop as in vanilla either way.
 
+- **Worlds about to be removed**: another extension (the Dungeon extension, for its run worlds) can
+  ask Corpse to bring the corpses out before the world goes. An online owner receives the contents
+  (`evacuatedMessage`, placeholders `<count>` and `<dropped>`); if they cannot take them, the body is
+  moved instead. An offline owner's body is moved to a fallback location. Bodies stored for a world
+  that is not loaded are moved too, and Corpse warns at startup about the dormant ones.
+
 ### Loot
 - **Full inventory and experience**: taken from the death event's own drop list, so what other
   plugins decided (Curse of Vanishing, soulbound items, `keepInventory`) is respected.
 - **Survives restarts**: stored in MySQL when available, otherwise in the plugin folder. An
   unreadable storage file is kept aside (`.unreadable-<time>`) instead of being overwritten.
+- **Expiry**: after `duration` seconds an unlooted corpse expires. With `dropOnExpire` (on by default)
+  its items drop on the ground and its experience as an orb; off, the corpse and what it holds are
+  deleted.
 - **Access control**: owner-only looting, or a timed protection window after which the corpse opens
   to everyone.
 - **Reach and click guard**: `interactionReach` (default 6 blocks, `0` = no limit) is the longest
@@ -55,11 +64,17 @@ infrastructure.
 - **Facts and audiences**: `has_corpse`, `corpse_count`, `corpse_owner_audience`, `corpse_waypoint`.
 - **Quests**: `corpse_recovery_objective`, active until the player recovers their corpse.
 - **Admin**: `corpse_admin_command` with `list` and `clear`.
+- **API**: `btcrenaud.corpse.api.CorpseApi` (`evacuateWorld`, `evacuateDormant`) answers a
+  `CompletableFuture<Int>` and uses only JDK and Bukkit types, so a caller can reach it by
+  reflection with no build dependency. `STORE_UNAVAILABLE` (-1) means the store could not be asked,
+  which is not "no corpse to move".
 - **Every text is yours**: messages, menu labels, the waypoint format and its eight arrows, the
   admin command replies and the menu items are all fields, with MiniMessage and PlaceholderAPI.
 
 ### Dynamic values
 - Most settings can be driven by placeholders and facts.
+- **Particles**: `corpse_settings` sets the particle, count, height, spread and speed of both
+  spawn layers (`spawnParticle...` and `spawnParticleSecondary...`).
 
 ---
 
@@ -100,11 +115,19 @@ Default permission: `typewriter.corpse.admin`.
 | Basic Extension | Base entries |
 | Entity Extension | Model rendering and the player fallback |
 | Quest Extension | The recovery objective |
-| GUI Extension | The loot menu |
+| GUI Extension (OmniGUI) `0.21` or later | The loot menu |
 | MySQL Extension | Cross-restart storage (optional — falls back to a local file) |
 
 A death with `keepInventory` on (or cancelled by another plugin) leaves no corpse: the player keeps
 their items. Corpses only take what the death would have dropped.
+
+---
+
+## Building
+
+`./gradlew build` (Java 21). The jar is written to `build/libs/CorpseExtension-<version>.jar`.
+OmniGUI is downloaded from its GitHub release (`omniGuiVersion` in `build.gradle.kts`), so nothing
+else needs to be checked out.
 
 ---
 
